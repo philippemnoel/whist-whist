@@ -1,5 +1,9 @@
 # Whist Browser & Cloud Tabs Framework
 
+> 💡 **NOTE**
+>
+> The Whist Browser project was archived in December 2022. The founding team behind Whist has since launched a new project, ParadeDB - https://github.com/paradedb/paradedb.
+
 This repository contains the bulk of the code written by the Whist team for the Whist Browser and its Cloud Tabs framework, following a [monorepo](https://en.wikipedia.org/wiki/Monorepo) structure.
 
 ## Repository Status
