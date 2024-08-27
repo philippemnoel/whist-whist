@@ -29,6 +29,11 @@ module "s3" {
   env    = var.env
 }
 
+# Dashboard database provider. Credentials are filled in by CI and
+# passed as environment variables to terraform.
+provider "mongodbatlas" {}
+
+
 # Region-specific modules, these are enabled only on certain regions
 
 # Enable all AWS regions on Terraform. Doing this will create
