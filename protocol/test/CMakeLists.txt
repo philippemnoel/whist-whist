@@ -58,7 +58,12 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     )
 # Server & Client files, for Windows/Linux (supported on both client and server)
 else()
+    if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+        set(EXTRA_TESTS capture_test.cpp)
+    endif()
+
     add_executable(${PROTOCOL_TEST_BINARY}
+        ${EXTRA_TESTS}
         protocol_test.cpp
         codec_test.cpp
         lodepng_test.cpp

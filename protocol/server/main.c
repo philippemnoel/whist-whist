@@ -33,9 +33,11 @@ Defines
 */
 
 #if OS_IS(OS_WIN32)
-#define INPUT_TYPE WHIST_INPUT_DEVICE_WIN32
+#define DEFAULT_INPUT_TYPE WHIST_INPUT_DEVICE_WIN32
+#define DEFAULT_CAPTURE_TYPE NVIDIA_DEVICE
 #else
-#define INPUT_TYPE WHIST_INPUT_DEVICE_UINPUT
+#define DEFAULT_INPUT_TYPE WHIST_INPUT_DEVICE_UINPUT
+#define DEFAULT_CAPTURE_TYPE NVX11_DEVICE
 #endif
 
 /*
@@ -363,6 +365,11 @@ static int multithreaded_sync_tcp_packets(void* opaque) {
 }
 
 static void whist_server_state_init(WhistServerState* state, whist_server_config* config) {
+    CaptureDeviceType capture_type = DEFAULT_CAPTURE_TYPE;
+    void* capture_data = getenv("DISPLAY");
+
+    FATAL_ASSERT(capture_data);
+
     memset(state, 0, sizeof(*state));
     state->config = config;
     state->client_os = WHIST_UNKNOWN_OS;
@@ -381,7 +388,12 @@ static void whist_server_state_init(WhistServerState* state, whist_server_config
     srand((unsigned int)time(NULL));
     server_state.connection_id = rand();
 
-    server_state.input_device = create_input_device(INPUT_TYPE, NULL);
+    if (create_capture_device(&state->capture_device, capture_type, capture_data, 1024, 800, 96) <
+        0) {
+        LOG_FATAL("unable to create capture device");
+    }
+
+    server_state.input_device = create_input_device(DEFAULT_INPUT_TYPE, state->capture_device.impl);
     if (!server_state.input_device) {
         LOG_FATAL("Failed to create input device.");
     }
@@ -392,13 +404,15 @@ static void whist_server_state_init(WhistServerState* state, whist_server_config
 int main(int argc, char* argv[]) {
     whist_server_config config = {0};
 
-    int ret = server_parse_args(&config, argc, argv);
-    if (ret == -1) {
-        // invalid usage
-        return -1;
-    } else if (ret == 1) {
-        // --help or --version
-        return 0;
+    switch (server_parse_args(&config, argc, argv)) {
+        case -1:
+            // invalid usage
+            return -1;
+        case 1:
+            // --help or --version
+            return 0;
+        default:
+            break;
     }
 
     whist_init_subsystems();

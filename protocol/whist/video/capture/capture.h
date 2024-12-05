@@ -21,10 +21,9 @@ Includes
 #include <whist/core/whist.h>
 #include <whist/utils/color.h>
 #include <whist/utils/linked_list.h>
+#include <whist/video/nvidia-linux/cuda_drvapi_dynlink_cuda.h>
 #if OS_IS(OS_LINUX)
 #include <X11/Xlib.h>
-#include "nvidiacapture.h"
-#include "x11capture.h"
 #endif
 
 /*
@@ -32,33 +31,58 @@ Includes
 Custom Types
 ============================
 */
+typedef struct CaptureDevice CaptureDevice;
+typedef struct CaptureDeviceImpl CaptureDeviceImpl;
 
-typedef struct CaptureDevice {
-    int id;
+/** @brief hints returned by the capture device for the encoder */
+typedef struct {
+    CUcontext cuda_context;
+} CaptureEncoderHints;
+
+typedef int (*CaptureDeviceInitFn)(CaptureDeviceImpl* device, int width, int height, int dpi);
+typedef int (*CaptureDeviceReconfigureFn)(CaptureDeviceImpl* device, int width, int height,
+                                          int dpi);
+typedef int (*CaptureDeviceCaptureScreenFn)(CaptureDeviceImpl* device, int* width, int* height,
+                                            int* pitch);
+typedef int (*CaptureDeviceTransferScreenFn)(CaptureDeviceImpl* device, CaptureEncoderHints* hints);
+typedef int (*CaptureDeviceGetDataFn)(CaptureDeviceImpl* device, void** buf, int* stride);
+typedef int (*CaptureDeviceGetDimensionsFn)(CaptureDeviceImpl* device, int* width, int* height,
+                                            int* dpi);
+typedef int (*CaptureDeviceUpdateDimensionsFn)(CaptureDeviceImpl* device, int width, int height,
+                                               int dpi);
+typedef void (*CaptureDeviceDestroyFn)(CaptureDeviceImpl** device);
+
+/** @brief main info about a capture device */
+typedef struct {
     int width;
     int height;
+    int dpi;
     int pitch;
+    CaptureDeviceType last_capture_device;
+} CaptureDeviceInfos;
+
+/** @brief a capture implementation */
+struct CaptureDeviceImpl {
+    CaptureDeviceType device_type;
+    CaptureDeviceInfos* infos;
+
+    CaptureDeviceInitFn init;
+    CaptureDeviceReconfigureFn reconfigure;
+    CaptureDeviceCaptureScreenFn capture_screen;
+    CaptureDeviceTransferScreenFn transfer_screen;
+    CaptureDeviceGetDataFn capture_get_data;
+    CaptureDeviceGetDimensionsFn get_dimensions;
+    CaptureDeviceUpdateDimensionsFn update_dimensions;
+    CaptureDeviceDestroyFn destroy;
+};
+
+typedef struct CaptureDevice {
+    CaptureDeviceInfos infos;
     void* frame_data;
     WhistWindow window_data[MAX_WINDOWS];
     WhistRGBColor corner_color;
     void* internal;
-
-#if OS_IS(OS_LINUX)
-    CaptureDeviceType active_capture_device;  // the device currently used for capturing
-    CaptureDeviceType last_capture_device;  // the device used for the last capture, so we can pick
-                                            // the right encoder
-    bool pending_destruction;
-    WhistThread nvidia_manager;
-    WhistSemaphore nvidia_device_semaphore;
-    WhistSemaphore nvidia_device_created;
-    bool nvidia_context_is_stale;
-    // Shared X11 state
-    Display* display;
-    Window root;
-    // Underlying X11/Nvidia capture devices
-    NvidiaCaptureDevice* nvidia_capture_device;
-    X11CaptureDevice* x11_capture_device;
-#endif
+    CaptureDeviceImpl* impl;
 } CaptureDevice;
 
 /*
@@ -72,13 +96,16 @@ Public Functions
  *
  * @param device                   Capture device struct to hold the capture
  *                                 device
+ * @param capture_type             Kind of capture device
+ * @param data                     An opaque data pointer given to the device
  * @param width                    Width of the screen to capture, in pixels
  * @param height                   Height of the screen to capture, in pixels
  * @param dpi                      Dots per sq inch of the screen, (Where 96 is neutral)
  *
  * @returns                        0 if succeeded, else -1
  */
-int create_capture_device(CaptureDevice* device, uint32_t width, uint32_t height, uint32_t dpi);
+int create_capture_device(CaptureDevice* device, CaptureDeviceType capture_type, void* data,
+                          int width, int height, int dpi);
 
 /**
  * @brief                          Tries to reconfigure the capture device
@@ -91,8 +118,7 @@ int create_capture_device(CaptureDevice* device, uint32_t width, uint32_t height
  *
  * @returns                        0 if succeeded, else -1
  */
-bool reconfigure_capture_device(CaptureDevice* device, uint32_t width, uint32_t height,
-                                uint32_t dpi);
+bool reconfigure_capture_device(CaptureDevice* device, int width, int height, int dpi);
 
 /**
  * @brief                          Capture a bitmap snapshot of the screen
@@ -113,9 +139,21 @@ int capture_screen(CaptureDevice* device);
  *
  * @param device                   The capture device used to capture the screen
  *
+ * @param hints			   		   Encoder hints reported by the capture device
+ *
  * @returns                        0 always
  */
-int transfer_screen(CaptureDevice* device);
+int transfer_screen(CaptureDevice* device, CaptureEncoderHints* hints);
+
+/**
+ * @brief 							Retrieve data pointer and stride from the capture
+ * 									device
+ * @param device					The capture device to get data from
+ * @param buf						the target buffer pointer
+ * @param stride					the target stride
+ * @return							0 on success, -1 on error
+ */
+int capture_get_data(CaptureDevice* device, void** buf, int* stride);
 
 /**
  * @brief                          Destroys and frees the memory of a capture device
@@ -123,16 +161,5 @@ int transfer_screen(CaptureDevice* device);
  * @param device                   The capture device to free
  */
 void destroy_capture_device(CaptureDevice* device);
-
-/**
- * Set filename used by the file-capture test device.
- *
- * TODO: this should be passed via create_capture_device() rather than
- * separately like this.
- *
- * @param filename  Filename to use the next time the file-capture
- *                  device is opened.  Must be a static string.
- */
-void file_capture_set_input_filename(const char* filename);
 
 #endif  // VIDEO_CAPTURE_H

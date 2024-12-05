@@ -33,6 +33,7 @@ Includes
 #include <whist/core/whist.h>
 #include <whist/input/input.h>
 #include <whist/logging/error_monitor.h>
+#include <whist/video/capture/capture.h>
 #include <whist/video/transfercapture.h>
 #include <whist/logging/log_statistic.h>
 #include "whist/video/ltr.h"
@@ -86,6 +87,7 @@ typedef struct WhistServerState {
     volatile bool update_encoder;
 
     InputDevice* input_device;
+    CaptureDevice capture_device;
 
     // Whether the stream needs to be restarted with new parameter sets
     // and an intra frame.

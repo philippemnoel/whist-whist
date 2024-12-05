@@ -8,18 +8,20 @@
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
 
-#include "capture.h"
+#include "filecapture.h"
 
 typedef struct {
-    const char *filename;
+    CaptureDeviceImpl base;
+
+    char *filename;
 
     // Demuxing.
     AVFormatContext *demux;
     AVPacket *demux_packet;
     int stream_index;
     AVStream *stream;
-    uint32_t input_width;
-    uint32_t input_height;
+    int input_width;
+    int input_height;
     enum AVPixelFormat input_format;
 
     // Decoding.
@@ -29,16 +31,13 @@ typedef struct {
     // Scaling.
     struct SwsContext *scale;
     AVFrame *scale_frame;
-    uint32_t output_width;
-    uint32_t output_height;
+    int output_width;
+    int output_height;
     enum AVPixelFormat output_format;
 
     // Output.
     AVFrame *output_frame;
 } FileCaptureDevice;
-
-static const char *file_capture_filename;
-void file_capture_set_input_filename(const char *filename) { file_capture_filename = filename; }
 
 static int file_capture_open_input(FileCaptureDevice *fc) {
     int err;
@@ -199,30 +198,7 @@ static void file_capture_close(FileCaptureDevice *fc) {
     av_frame_free(&fc->output_frame);
 }
 
-int create_capture_device(CaptureDevice *device, uint32_t width, uint32_t height, uint32_t dpi) {
-    int err;
-
-    FileCaptureDevice *fc = safe_malloc(sizeof(*fc));
-    memset(fc, 0, sizeof(*fc));
-
-    fc->filename = file_capture_filename;
-    fc->output_width = width;
-    fc->output_height = height;
-
-    err = file_capture_open(fc);
-    if (err < 0) {
-        file_capture_close(fc);
-        free(fc);
-        return err;
-    }
-
-    device->internal = fc;
-    return 0;
-}
-
-bool reconfigure_capture_device(CaptureDevice *device, uint32_t width, uint32_t height,
-                                uint32_t dpi) {
-    FileCaptureDevice *fc = device->internal;
+static int file_reconfigure_capture_device(FileCaptureDevice *fc, int width, int height, int dpi) {
     int err;
 
     fc->output_width = width;
@@ -230,21 +206,22 @@ bool reconfigure_capture_device(CaptureDevice *device, uint32_t width, uint32_t 
 
     err = file_capture_configure_scaler(fc);
     if (err < 0) {
-        return false;
+        return -1;
     }
 
-    return true;
+    return 0;
 }
 
-void destroy_capture_device(CaptureDevice *device) {
-    FileCaptureDevice *fc = device->internal;
-
+static void file_destroy_capture_device(FileCaptureDevice **pfc) {
+    FileCaptureDevice *fc = *pfc;
     file_capture_close(fc);
+    free(fc->filename);
     free(fc);
+
+    *pfc = NULL;
 }
 
-int capture_screen(CaptureDevice *device) {
-    FileCaptureDevice *fc = device->internal;
+static int file_capture_screen(FileCaptureDevice *fc, int *width, int *height, int *pitch) {
     int err;
 
     av_frame_unref(fc->output_frame);
@@ -306,19 +283,66 @@ int capture_screen(CaptureDevice *device) {
         av_frame_move_ref(fc->output_frame, fc->decode_frame);
     }
 
+    *width = fc->output_width;
+    *height = fc->output_height;
+    *pitch = fc->base.infos->pitch;
     return 0;
 }
 
-int transfer_screen(CaptureDevice *device) {
-    FileCaptureDevice *fc = device->internal;
-
+static int file_transfer_screen(FileCaptureDevice *fc, CaptureEncoderHints *hints) {
     if (!fc->output_frame || !fc->output_frame->data[0]) {
         LOG_ERROR("No output frame available when trying to transfer data.");
         return -1;
     }
 
-    device->frame_data = fc->output_frame->data[0];
-    device->pitch = fc->output_frame->linesize[0];
+    memset(hints, 0, sizeof(*hints));
+    return 0;
+}
+
+static int file_capture_getdata(FileCaptureDevice *device, void **buf, int *stride) {
+    *buf = device->output_frame->data[0];
+    *stride = device->output_frame->linesize[0];
+    return 0;
+}
+
+static int file_get_dimensions(FileCaptureDevice *device, int *w, int *h, int *dpi) {
+    *w = device->output_width;
+    *h = device->output_height;
+    *dpi = 0;
+    return 0;
+}
+
+static int file_capture_device_init(FileCaptureDevice *dev, int width, int height, int dpi) {
+    dev->output_width = width;
+    dev->output_height = height;
+
+    int err = file_capture_open(dev);
+    if (err < 0) {
+        return -1;
+    }
 
     return 0;
+}
+
+CaptureDeviceImpl *create_file_capture_device(CaptureDeviceInfos *infos, const char *movie) {
+    FileCaptureDevice *fc = (FileCaptureDevice *)safe_zalloc(sizeof(FileCaptureDevice));
+
+    CaptureDeviceImpl *impl = &fc->base;
+    impl->device_type = FILE_DEVICE;
+    impl->infos = infos;
+    impl->init = (CaptureDeviceInitFn)file_capture_device_init;
+    impl->reconfigure = (CaptureDeviceReconfigureFn)file_reconfigure_capture_device;
+    impl->capture_screen = (CaptureDeviceCaptureScreenFn)file_capture_screen;
+    impl->capture_get_data = (CaptureDeviceGetDataFn)file_capture_getdata;
+    impl->transfer_screen = (CaptureDeviceTransferScreenFn)file_transfer_screen;
+    impl->get_dimensions = (CaptureDeviceGetDimensionsFn)file_get_dimensions;
+    impl->destroy = (CaptureDeviceDestroyFn)file_destroy_capture_device;
+
+    fc->filename = strdup(movie);
+    if (!fc->filename) goto out_error;
+    return impl;
+
+out_error:
+    free(fc);
+    return NULL;
 }

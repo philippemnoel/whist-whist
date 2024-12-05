@@ -151,8 +151,8 @@ NvidiaEncoder* create_nvidia_encoder(int bitrate, CodecType codec, int out_width
         Returns:
             (NvidiaEncoder*): New Nvidia encoder with the correct settings
     */
-    LOG_INFO("Creating encoder of bitrate %d, codec %d, width %d, height %d, cuda_context %p",
-             bitrate, codec, out_width, out_height, cuda_context);
+    LOG_INFO("Creating encoder of bitrate %d, codec %d, size = %dx%d, cuda_context %p", bitrate,
+             codec, out_width, out_height, cuda_context);
     NVENCSTATUS status;
 
     // Initialize the encoder
@@ -397,14 +397,16 @@ static int register_resource(NvidiaEncoder* encoder, RegisteredResource* resourc
     */
     switch (resource_to_register->device_type) {
         case NVIDIA_DEVICE: {
-            LOG_DEBUG("On nvidia, width = %d, height = %d, pitch = %d", resource_to_register->width,
-                      resource_to_register->height, resource_to_register->pitch);
+            LOG_DEBUG("On nvidia, width = %d, height = %d, pitch = %d, texture = %p",
+                      resource_to_register->width, resource_to_register->height,
+                      resource_to_register->pitch, resource_to_register->texture_pointer);
             if (resource_to_register->texture_pointer == NULL) {
                 LOG_ERROR("Tried to register NULL resource, exiting");
                 return -1;
             }
-            NV_ENC_REGISTER_RESOURCE register_params = {0};
+
             // register the device's resources to the encoder
+            NV_ENC_REGISTER_RESOURCE register_params = {0};
             register_params.version = NV_ENC_REGISTER_RESOURCE_VER;
             register_params.resourceType = NV_ENC_INPUT_RESOURCE_TYPE_CUDADEVICEPTR;
             register_params.width = resource_to_register->width;

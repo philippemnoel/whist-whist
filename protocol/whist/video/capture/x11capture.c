@@ -1,7 +1,7 @@
 /**
  * Copyright (c) 2021-2022 Whist Technologies, Inc.
- * @file x11capture.h
- * @brief This file contains the code to do screen capture via the X11 API on Linux Ubuntu.
+ * @file x11capture.c
+ * @brief This file contains the code to do screen capture via the X11 API
 ============================
 Usage
 ============================
@@ -17,14 +17,15 @@ capturing frames.
 Includes
 ============================
 */
-#include "capture.h"
+#include "x11capture.h"
+#include "../cudacontext.h"
 
-#include <X11/extensions/Xdamage.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/shm.h>
 #include <X11/Xlib.h>
+#include <X11/extensions/Xdamage.h>
 #include <X11/Xutil.h>
 
 /*
@@ -86,90 +87,119 @@ Public Function Implementations
 ============================
 */
 
-X11CaptureDevice* create_x11_capture_device(uint32_t width, uint32_t height, uint32_t dpi) {
+static int x11_update_dimensions(X11CaptureDevice* device, int width, int height, int dpi) {
     /*
-        Create an X11 device that will capture a screen of the specified width, height, and DPI
-       using the X11 API.
+       Using XRandR, try updating the device's display to the given width, height, and DPI. Even if
+       this fails to set the dimensions, device->width and device->height will always equal the
+       actual dimensions of the screen.
 
         Arguments:
-            width (uint32_t): desired window width
-            height (uint32_t): desired window height
-            dpi (uint32_t): desired window DPI
-
-        Returns:
-            (X11CaptureDevice*): pointer to the created device
+            device (CaptureDevice*): pointer to the device whose window we're resizing
+            width (uint32_t): desired width
+            height (uint32_t): desired height
+            dpi (uint32_t): desired DPI
     */
-    UNUSED(dpi);
-    // malloc and 0-init the device
-    X11CaptureDevice* device = (X11CaptureDevice*)safe_malloc(sizeof(X11CaptureDevice));
-    memset(device, 0, sizeof(X11CaptureDevice));
 
-    device->display = XOpenDisplay(NULL);
-    if (!device->display) {
-        LOG_ERROR("ERROR: create_x11_capture_device display did not open");
-        return NULL;
+    CaptureDeviceInfos* infos = device->base.infos;
+    char cmd[1024];
+
+    // If the device's width/height must be updated
+    if (infos->width != width || infos->height != height) {
+        char modename[128];
+
+        snprintf(modename, sizeof(modename), "Whist-%dx%d", width, height);
+
+        char* display_name;
+        runcmd("xrandr --current | grep \" connected\"", &display_name);
+        *strchr(display_name, ' ') = '\0';
+
+        snprintf(cmd, sizeof(cmd), "xrandr --delmode %s %s", display_name, modename);
+        runcmd(cmd, NULL);
+        snprintf(cmd, sizeof(cmd), "xrandr --rmmode %s", modename);
+        runcmd(cmd, NULL);
+        double pixel_clock = 60.0 * (width + 24) * (height + 24);
+        snprintf(cmd, sizeof(cmd), "xrandr --newmode %s %.2f %d %d %d %d %d %d %d %d +hsync +vsync",
+                 modename, pixel_clock / 1000000.0, width, width + 8, width + 16, width + 24,
+                 height, height + 8, height + 16, height + 24);
+        runcmd(cmd, NULL);
+        snprintf(cmd, sizeof(cmd), "xrandr --addmode %s %s", display_name, modename);
+        runcmd(cmd, NULL);
+        snprintf(cmd, sizeof(cmd), "xrandr --output %s --mode %s", display_name, modename);
+        runcmd(cmd, NULL);
+
+        free(display_name);
+
+        infos->width = width;
+        infos->height = height;
     }
-    device->root = DefaultRootWindow(device->display);
-    device->width = width;
-    device->height = height;
-    int damage_event, damage_error;
-    XDamageQueryExtension(device->display, &damage_event, &damage_error);
-    device->damage = XDamageCreate(device->display, device->root, XDamageReportRawRectangles);
-    device->event = damage_event;
-    init_atoms(device);
 
-    if (!reconfigure_x11_capture_device(device, width, height, dpi)) {
-        return NULL;
+    // This script must be built in to the Mandelbox. It writes new DPI for X11 and
+    // AwesomeWM, and uses SIGHUP to XSettingsd to trigger application and window
+    // manager refreshes to use the new DPI.
+    if (dpi && dpi != infos->dpi) {
+        snprintf(cmd, sizeof(cmd), "/usr/share/whist/update-whist-dpi.sh %d", dpi);
+        runcmd(cmd, NULL);
+        infos->dpi = dpi;
     }
 
-    return device;
+    return 0;
 }
 
-bool reconfigure_x11_capture_device(X11CaptureDevice* device, uint32_t width, uint32_t height,
-                                    uint32_t dpi) {
-    if (device->image) {
-        XFree(device->image);
-        device->image = NULL;
+static int x11_reconfigure_capture_device(X11CaptureDevice* dev, int width, int height, int dpi) {
+    CaptureDeviceInfos* infos = dev->base.infos;
+    int ret;
+
+    ret = x11_update_dimensions(dev, width, height, dpi);
+    if (ret != 0) return ret;
+
+    if (dev->image) {
+        XFree(dev->image);
+        dev->image = NULL;
     }
-    device->width = width;
-    device->height = height;
+
     XWindowAttributes window_attributes;
-    if (!XGetWindowAttributes(device->display, device->root, &window_attributes)) {
+    if (!XGetWindowAttributes(dev->display, dev->root, &window_attributes)) {
         LOG_ERROR("Error while getting window attributes");
-        return false;
+        return -1;
     }
+
     Screen* screen = window_attributes.screen;
 
-    device->image =
-        XShmCreateImage(device->display,
+    dev->image =
+        XShmCreateImage(dev->display,
                         DefaultVisualOfScreen(screen),  // DefaultVisual(device->display, 0), // Use
                                                         // a correct visual. Omitted for brevity
                         DefaultDepthOfScreen(screen),   // 24,   // Determine correct depth from
                                                         // the visual. Omitted for brevity
-                        ZPixmap, NULL, &device->segment, device->width, device->height);
+                        ZPixmap, NULL, &dev->segment, width, height);
 
-    if (device->image == NULL) {
+    if (dev->image == NULL) {
         LOG_ERROR("Could not XShmCreateImage!");
-        return false;
+        return -2;
     }
 
-    device->segment.shmid = shmget(
-        IPC_PRIVATE, device->image->bytes_per_line * device->image->height, IPC_CREAT | 0777);
+    dev->segment.shmid =
+        shmget(IPC_PRIVATE, dev->image->bytes_per_line * dev->image->height, IPC_CREAT | 0777);
 
-    device->segment.shmaddr = device->image->data = shmat(device->segment.shmid, 0, 0);
-    device->segment.readOnly = False;
+    dev->segment.shmaddr = dev->image->data = shmat(dev->segment.shmid, 0, 0);
+    dev->segment.readOnly = False;
 
-    if (!XShmAttach(device->display, &device->segment)) {
+    if (!XShmAttach(dev->display, &dev->segment)) {
         LOG_ERROR("Error while attaching display");
-        destroy_x11_capture_device(device);
-        return false;
+        return -3;
     }
-    device->frame_data = device->image->data;
-    device->pitch = device->image->bytes_per_line;
-    return true;
+
+    dev->frame_data = dev->image->data;
+    infos->pitch = dev->image->bytes_per_line;
+
+    return 0;
 }
 
-int x11_capture_screen(X11CaptureDevice* device) {
+static int x11_capture_device_init(X11CaptureDevice* dev, int width, int height, int dpi) {
+    return x11_reconfigure_capture_device(dev, width, height, dpi);
+}
+
+static int x11_capture_screen(X11CaptureDevice* dev, int* width, int* height, int* pitch) {
     /*
         Capture the screen using our X11 device. TODO: needs more documentation, I (Serina) am not
        really sure what's happening here.
@@ -180,19 +210,15 @@ int x11_capture_screen(X11CaptureDevice* device) {
         Returns:
             (int): 0 on success, -1 on failure
     */
-    if (!device) {
-        LOG_ERROR(
-            "Tried to call x11_capture_screen with a NULL X11CaptureDevice! We shouldn't do this!");
-        return -1;
-    }
+    FATAL_ASSERT(dev);
 
     int accumulated_frames = 0;
-    while (XPending(device->display)) {
+    while (XPending(dev->display)) {
         // XDamageNotifyEvent* dev; unused, remove or is this needed and should
         // be used?
         XEvent ev;
-        XNextEvent(device->display, &ev);
-        if (ev.type == device->event + XDamageNotify) {
+        XNextEvent(dev->display, &ev);
+        if (ev.type == dev->event + XDamageNotify) {
             // accumulated_frames will eventually be the number of damage events (accumulated
             // frames)
             accumulated_frames++;
@@ -201,63 +227,161 @@ int x11_capture_screen(X11CaptureDevice* device) {
     // Don't Lock and UnLock Display unneccesarily, if there are no frames to capture
     if (accumulated_frames == 0) return 0;
 
-    device->first = true;
-    XLockDisplay(device->display);
-    if (accumulated_frames || device->first) {
-        device->first = false;
+    CaptureDeviceInfos* infos = dev->base.infos;
+    XLockDisplay(dev->display);
+    if (accumulated_frames || dev->first) {
+        dev->first = false;
 
-        XDamageSubtract(device->display, device->damage, None, None);
+        XDamageSubtract(dev->display, dev->damage, None, None);
 
         XWindowAttributes window_attributes;
-        if (!XGetWindowAttributes(device->display, device->root, &window_attributes)) {
+        if (XGetWindowAttributes(dev->display, dev->root, &window_attributes) == 0) {
             LOG_ERROR("Couldn't get window width and height!");
             accumulated_frames = -1;
-        } else if (device->width != window_attributes.width ||
-                   device->height != window_attributes.height) {
-            LOG_ERROR("Wrong width/height!");
+        } else if (infos->width != window_attributes.width ||
+                   infos->height != window_attributes.height) {
+            LOG_ERROR("Wrong width/height (infos=%dx%d window=%dx%d) !", infos->width,
+                      infos->height, window_attributes.width, window_attributes.height);
             accumulated_frames = -1;
         } else {
             XErrorHandler prev_handler = XSetErrorHandler(handler);
-            if (!XShmGetImage(device->display, device->root, device->image, 0, 0, AllPlanes)) {
+            if (!XShmGetImage(dev->display, dev->root, dev->image, 0, 0, AllPlanes)) {
                 LOG_ERROR("Error while capturing the screen");
                 accumulated_frames = -1;
             } else {
-                device->pitch = device->image->bytes_per_line;
+                *pitch = dev->image->bytes_per_line;
             }
             if (accumulated_frames != -1) {
                 // get the color
                 XColor c;
-                c.pixel = XGetPixel(device->image, 0, 0);
-                XQueryColor(device->display,
-                            DefaultColormap(device->display, XDefaultScreen(device->display)), &c);
+
+                c.pixel = XGetPixel(dev->image, 0, 0);
+                XQueryColor(dev->display,
+                            DefaultColormap(dev->display, XDefaultScreen(dev->display)), &c);
                 // Color format is r/g/b 0x0000-0xffff
                 // We just need the leading byte
-                device->corner_color.red = c.red >> 8;
-                device->corner_color.green = c.green >> 8;
-                device->corner_color.blue = c.blue >> 8;
+                dev->corner_color.red = c.red >> 8;
+                dev->corner_color.green = c.green >> 8;
+                dev->corner_color.blue = c.blue >> 8;
             }
             XSetErrorHandler(prev_handler);
         }
     }
-    XUnlockDisplay(device->display);
+    XUnlockDisplay(dev->display);
+
+    *width = infos->width;
+    *height = infos->height;
     return accumulated_frames;
 }
 
-void destroy_x11_capture_device(X11CaptureDevice* device) {
+static int x11_capture_transfer_screen(X11CaptureDevice* device, CaptureEncoderHints* hints) {
+    memset(hints, 0, sizeof(*hints));
+    return 0;
+}
+
+static int x11_get_dimensions(X11CaptureDevice* device, int* w, int* h, int* dpi) {
+    /*
+        Get the width and height of the display associated with device, and store them in w and h,
+        respectively.
+
+        Arguments:
+            device (CaptureDevice*): device containing the display whose dimensions we are getting
+            w (int*): pointer to store width
+            h (int*): pointer to store hight
+    */
+    if (!device) return -1;
+
+    XWindowAttributes window_attributes;
+    if (!XGetWindowAttributes(device->display, device->root, &window_attributes)) {
+        *w = 0;
+        *h = 0;
+        LOG_ERROR("Error while getting window attributes");
+        return -1;
+    }
+
+    *w = (uint32_t)window_attributes.width;
+    *h = (uint32_t)window_attributes.height;
+    *dpi = 0;
+    return 0;
+}
+
+static int x11_capture_getdata(X11CaptureDevice* device, void** buf, int* stride) {
+    *buf = device->frame_data;
+    *stride = device->base.infos->pitch;
+    return 0;
+}
+
+static void x11_destroy_capture_device(X11CaptureDevice** pdev) {
     /*
         Destroy the X11 device and free it.
 
         Arguments:
             device (X11CaptureDevice*): device to destroy
     */
-    if (!device) {
-        LOG_ERROR("Passed NULL into destroy_x11_capture_device!");
-        return;
+    X11CaptureDevice* device = *pdev;
+    if (device) {
+        if (device->image) {
+            XFree(device->image);
+            device->image = NULL;
+        }
+        XCloseDisplay(device->display);
     }
-    if (device->image) {
-        XFree(device->image);
-        device->image = NULL;
-    }
-    XCloseDisplay(device->display);
     free(device);
+    *pdev = NULL;
+}
+
+CaptureDeviceImpl* create_x11_capture_device(CaptureDeviceInfos* infos, const char* display) {
+    X11CaptureDevice* dev = (X11CaptureDevice*)safe_zalloc(sizeof(X11CaptureDevice));
+    CaptureDeviceImpl* impl = &dev->base;
+    int ret;
+
+    LOG_INFO("creating x11 capture driver(%s)", display);
+    dev->display = XOpenDisplay(display);
+    if (!dev->display) {
+        LOG_ERROR("ERROR: create_x11_capture_device display did not open");
+        goto out_display;
+    }
+
+    dev->root = DefaultRootWindow(dev->display);
+    if (!dev->root) {
+        LOG_ERROR("ERROR: create_x11_capture_device unable to retrieve root window");
+        goto out_root;
+    }
+
+    ret = x11_get_dimensions(dev, &infos->width, &infos->height, &infos->dpi);
+    if (ret < 0) {
+        goto out_dimensions;
+    }
+
+    int damage_event, damage_error;
+    if (!XDamageQueryExtension(dev->display, &damage_event, &damage_error)) goto out_damage_ext;
+
+    dev->damage = XDamageCreate(dev->display, dev->root, XDamageReportRawRectangles);
+    if (!dev->damage) goto out_damage_create;
+
+    dev->event = damage_event;
+    dev->segment.shmid = -1;
+    dev->first = true;
+
+    init_atoms(dev);
+
+    impl->infos = infos;
+    impl->init = (CaptureDeviceInitFn)x11_capture_device_init;
+    impl->reconfigure = (CaptureDeviceReconfigureFn)x11_reconfigure_capture_device;
+    impl->capture_screen = (CaptureDeviceCaptureScreenFn)x11_capture_screen;
+    impl->capture_get_data = (CaptureDeviceGetDataFn)x11_capture_getdata;
+    impl->transfer_screen = (CaptureDeviceTransferScreenFn)x11_capture_transfer_screen;
+    impl->get_dimensions = (CaptureDeviceGetDimensionsFn)x11_get_dimensions;
+    impl->destroy = (CaptureDeviceDestroyFn)x11_destroy_capture_device;
+    infos->last_capture_device = X11_DEVICE;
+    return impl;
+
+out_damage_create:
+out_damage_ext:
+out_dimensions:
+out_root:
+    XCloseDisplay(dev->display);
+out_display:
+    free(dev);
+    return NULL;
 }

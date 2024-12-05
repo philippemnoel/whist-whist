@@ -53,7 +53,7 @@ Public Functions
  * \return
  *   NVFBC_TRUE in case of success, NVFBC_FALSE otherwise.
  */
-NVFBC_BOOL cuda_init(CUcontext* cuda_context);
+NVFBC_BOOL cuda_init(CUcontext* cuda_context, bool make_current);
 
 /**
  * @brief                          Returns a pointer to the CUDA context that will be used next by
@@ -62,13 +62,6 @@ NVFBC_BOOL cuda_init(CUcontext* cuda_context);
  * @returns                        Pointer to the video thread CUDA context
  */
 CUcontext* get_video_thread_cuda_context_ptr(void);
-/**
- * @brief                           Returns a pointer to the CUDA context that will be used next by
- * the Nvidia device manager thread
- *
- * @returns                         Pointer to nvidia thread CUDA context
- */
-CUcontext* get_nvidia_thread_cuda_context_ptr(void);
 
 /**
  * @brief                           Destroys the CUDA context given.

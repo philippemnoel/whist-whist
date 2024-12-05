@@ -11,6 +11,8 @@ extern "C" {
 #include "whist/video/codec/encode.h"
 #include "whist/video/codec/decode.h"
 #include "whist/video/capture/capture.h"
+#include "whist/video/transfercapture.h"
+#include "whist/video/capture/memorycapture.h"
 #include "whist/video/ltr.h"
 }
 
@@ -162,12 +164,18 @@ TEST_F(CodecTest, EncodeDecodeTest) {
     int height = 720;
     int pitch = 4 * width;
     int bitrate = 1000000;
-    uint8_t *image_rgb_in = (uint8_t *)malloc(pitch * height);
-    EXPECT_TRUE(image_rgb_in);
+    CaptureDevice capture;
+    uint8_t *image_rgb_in = (uint8_t *)safe_zalloc(pitch * height);
+
+    MemoryCaptureParams params = {image_rgb_in, (uint32_t)pitch};
+
+    EXPECT_GE(create_capture_device(&capture, MEMORY_DEVICE, (void *)&params, width, 720, 0), 0);
 
     size_t packet_buffer_size = 4 * 1024 * 1024;
     uint8_t *packet_buffer = (uint8_t *)malloc(packet_buffer_size);
     EXPECT_TRUE(packet_buffer);
+
+    cuda_init(get_video_thread_cuda_context_ptr(), true);
 
     VideoEncoder *enc =
         create_video_encoder(width, height, bitrate, bitrate / MAX_FPS, CODEC_TYPE_H264);
@@ -179,19 +187,18 @@ TEST_F(CodecTest, EncodeDecodeTest) {
     int ret;
     for (int frame = 0; frame < 100; frame++) {
         VideoFrameType frame_type = VIDEO_FRAME_TYPE_NORMAL;
-        if (frame == 0 || frame == 60) {
-            // The first frame is implicitly an intra frame; also ask for one
-            // partway through (and check below to make sure it was generated).
-            frame_type = VIDEO_FRAME_TYPE_INTRA;
-            if (frame == 60) {
-                video_encoder_set_iframe(enc);
-            }
-        }
+        bool force_iframe = false;
 
         test_write_image(image_rgb_in, width, height, pitch, frame);
 
-        ret = ffmpeg_encoder_frame_intake(enc->ffmpeg_encoder, image_rgb_in, pitch);
-        EXPECT_EQ(ret, 0);
+        EXPECT_GE(transfer_capture(&capture, enc, &force_iframe), 0);
+
+        if ((frame % 60 == 0) || force_iframe) {
+            // The first frame is implicitly an intra frame; also ask for one
+            // partway through (and check below to make sure it was generated).
+            frame_type = VIDEO_FRAME_TYPE_INTRA;
+            video_encoder_set_iframe(enc);
+        }
 
         ret = video_encoder_encode(enc);
         EXPECT_EQ(ret, 0);
@@ -227,6 +234,7 @@ TEST_F(CodecTest, EncodeDecodeTest) {
 
     destroy_video_encoder(enc);
     destroy_video_decoder(dec);
+    destroy_capture_device(&capture);
 
     free(image_rgb_in);
     free(packet_buffer);
@@ -234,15 +242,14 @@ TEST_F(CodecTest, EncodeDecodeTest) {
 
 // Capture a stream from an MP4 file.
 TEST_F(CodecTest, CaptureMP4Test) {
-    file_capture_set_input_filename("assets/100-frames-h264.mp4");
-
     CaptureDevice cap;
     int ret;
 
     int width = 1280;
     int height = 720;
 
-    ret = create_capture_device(&cap, width, height, 96);
+    ret = create_capture_device(&cap, FILE_DEVICE, (void *)"assets/100-frames-h264.mp4", width,
+                                height, 96);
     EXPECT_EQ(ret, 0);
 
     for (int frame = 0; frame < 20; frame++) {
@@ -254,14 +261,15 @@ TEST_F(CodecTest, CaptureMP4Test) {
             EXPECT_EQ(ret, true);
         }
 
+        CaptureEncoderHints hints;
         ret = capture_screen(&cap);
         EXPECT_EQ(ret, 0);
 
-        ret = transfer_screen(&cap);
+        ret = transfer_screen(&cap, &hints);
         EXPECT_EQ(ret, 0);
 
         int value =
-            test_read_image((const uint8_t *)cap.frame_data, width, height, cap.pitch, false);
+            test_read_image((const uint8_t *)cap.frame_data, width, height, cap.infos.pitch, false);
         EXPECT_EQ(value, frame);
     }
 
@@ -270,26 +278,25 @@ TEST_F(CodecTest, CaptureMP4Test) {
 
 // Capture using a single JPEG file repeatedly.
 TEST_F(CodecTest, CaptureJPEGTest) {
-    file_capture_set_input_filename("assets/1729.jpeg");
-
     CaptureDevice cap;
     int ret;
 
     int width = 640;
     int height = 480;
 
-    ret = create_capture_device(&cap, width, height, 96);
+    ret = create_capture_device(&cap, FILE_DEVICE, (void *)"assets/1729.jpeg", width, height, 96);
     EXPECT_EQ(ret, 0);
 
     for (int frame = 0; frame < 4; frame++) {
         ret = capture_screen(&cap);
         EXPECT_EQ(ret, 0);
 
-        ret = transfer_screen(&cap);
+        CaptureEncoderHints hints;
+        ret = transfer_screen(&cap, &hints);
         EXPECT_EQ(ret, 0);
 
         int value =
-            test_read_image((const uint8_t *)cap.frame_data, width, height, cap.pitch, false);
+            test_read_image((const uint8_t *)cap.frame_data, width, height, cap.infos.pitch, false);
         EXPECT_EQ(value, 1729);
     }
 

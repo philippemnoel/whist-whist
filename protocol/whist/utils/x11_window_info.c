@@ -22,6 +22,7 @@ Includes
 #include "window_info.h"
 #include <locale.h>
 #include <whist/video/capture/x11capture.h>
+#include <whist/video/capture/nvx11capture.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -119,6 +120,17 @@ static int handler(Display* disp, XErrorEvent* error);
 
 bool is_window_fullscreen(X11CaptureDevice* device, WhistWindow whist_window);
 
+static X11CaptureDevice* get_x11_capture_device(CaptureDeviceImpl* impl) {
+    switch (impl->device_type) {
+        case X11_DEVICE:
+            return (X11CaptureDevice*)impl;
+        case NVX11_DEVICE:
+            return nvx11_capture_get_x11(impl);
+        default:
+            return NULL;
+    }
+}
+
 /*
 ============================
 Public Function Implementations
@@ -133,13 +145,13 @@ void init_window_info_getter(void) {
 }
 
 void get_valid_windows(CaptureDevice* capture_device, LinkedList* list) {
-    X11CaptureDevice* device = capture_device->x11_capture_device;
+    X11CaptureDevice* device = get_x11_capture_device(capture_device->impl);
     get_valid_windows_helper(device, list, device->root);
 }
 
 void get_window_attributes(CaptureDevice* capture_device, WhistWindow* whist_window) {
     Window w = (Window)whist_window->id;
-    X11CaptureDevice* device = capture_device->x11_capture_device;
+    X11CaptureDevice* device = get_x11_capture_device(capture_device->impl);
     XWindowAttributes attr;
     if (!XGetWindowAttributes(device->display, w, &attr)) {
         LOG_ERROR("Failed to get window %lu attributes!", w);
@@ -156,7 +168,7 @@ void get_window_attributes(CaptureDevice* capture_device, WhistWindow* whist_win
 }
 
 WhistWindow get_active_window(CaptureDevice* capture_device) {
-    X11CaptureDevice* device = capture_device->x11_capture_device;
+    X11CaptureDevice* device = get_x11_capture_device(capture_device->impl);
     WhistWindow w;
     static unsigned long nitems;
     static unsigned char* result;  // window stored here
@@ -184,7 +196,7 @@ WhistWindow get_active_window(CaptureDevice* capture_device) {
 
 void minimize_window(CaptureDevice* capture_device, WhistWindow whist_window) {
     Window w = (Window)whist_window.id;
-    X11CaptureDevice* device = capture_device->x11_capture_device;
+    X11CaptureDevice* device = get_x11_capture_device(capture_device->impl);
 
     XEvent xevent =
         create_change_state_message(device, w, _NET_WM_STATE_ADD, device->_NET_WM_STATE_HIDDEN, 0);
@@ -197,7 +209,7 @@ void unminimize_window(CaptureDevice* capture_device, WhistWindow whist_window) 
     // I'm not sure what will happen if you call this on a window that's already not minimized --
     // hopefully a noop
     Window w = (Window)whist_window.id;
-    X11CaptureDevice* device = capture_device->x11_capture_device;
+    X11CaptureDevice* device = get_x11_capture_device(capture_device->impl);
 
     XEvent xevent = create_change_state_message(device, w, _NET_WM_STATE_REMOVE,
                                                 device->_NET_WM_STATE_HIDDEN, 0);
@@ -208,7 +220,7 @@ void unminimize_window(CaptureDevice* capture_device, WhistWindow whist_window) 
 
 void maximize_window(CaptureDevice* capture_device, WhistWindow whist_window) {
     Window w = (Window)whist_window.id;
-    X11CaptureDevice* device = capture_device->x11_capture_device;
+    X11CaptureDevice* device = get_x11_capture_device(capture_device->impl);
 
     XEvent xevent = create_change_state_message(device, w, _NET_WM_STATE_ADD,
                                                 device->_NET_WM_STATE_MAXIMIZED_VERT,
@@ -220,7 +232,7 @@ void maximize_window(CaptureDevice* capture_device, WhistWindow whist_window) {
 
 void fullscreen_window(CaptureDevice* capture_device, WhistWindow whist_window) {
     Window w = (Window)whist_window.id;
-    X11CaptureDevice* device = capture_device->x11_capture_device;
+    X11CaptureDevice* device = get_x11_capture_device(capture_device->impl);
 
     XEvent xevent = create_change_state_message(device, w, _NET_WM_STATE_ADD,
                                                 device->_NET_WM_STATE_FULLSCREEN, 0);
@@ -231,7 +243,7 @@ void fullscreen_window(CaptureDevice* capture_device, WhistWindow whist_window) 
 
 void unfullscreen_window(CaptureDevice* capture_device, WhistWindow whist_window) {
     Window w = (Window)whist_window.id;
-    X11CaptureDevice* device = capture_device->x11_capture_device;
+    X11CaptureDevice* device = get_x11_capture_device(capture_device->impl);
 
     XEvent xevent = create_change_state_message(device, w, _NET_WM_STATE_REMOVE,
                                                 device->_NET_WM_STATE_FULLSCREEN, 0);
@@ -242,7 +254,7 @@ void unfullscreen_window(CaptureDevice* capture_device, WhistWindow whist_window
 
 void bring_window_to_top(CaptureDevice* capture_device, WhistWindow whist_window) {
     Window w = (Window)whist_window.id;
-    X11CaptureDevice* device = capture_device->x11_capture_device;
+    X11CaptureDevice* device = get_x11_capture_device(capture_device->impl);
 
     XEvent xevent =
         create_change_state_message(device, w, _NET_WM_STATE_ADD, device->_NET_WM_STATE_ABOVE, 0);
@@ -339,13 +351,13 @@ void move_resize_window(CaptureDevice* capture_device, WhistWindow whist_window,
                         int width, int height) {
     // note: _NET_MOVERESIZE_WINDOW is not supported
     Window w = (Window)whist_window.id;
-    X11CaptureDevice* device = capture_device->x11_capture_device;
+    X11CaptureDevice* device = get_x11_capture_device(capture_device->impl);
     XMoveResizeWindow(device->display, w, x, y, width, height);
 }
 
 void close_window(CaptureDevice* capture_device, WhistWindow whist_window) {
     Window w = (Window)whist_window.id;
-    X11CaptureDevice* device = capture_device->x11_capture_device;
+    X11CaptureDevice* device = get_x11_capture_device(capture_device->impl);
 
     XEvent xevent = {0};
     XClientMessageEvent xclient = {0};

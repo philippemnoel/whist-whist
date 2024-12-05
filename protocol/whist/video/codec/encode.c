@@ -309,7 +309,7 @@ VideoEncoder *create_video_encoder(int width, int height, int bitrate, int vbv_s
 int video_encoder_encode(VideoEncoder *encoder) {
     /*
         Encode a frame using the encoder and store the resulting packets into encoder->packets. If
-       the frame has alreday been encoded, this function does nothing.
+       the frame has already been encoded, this function does nothing.
 
         Arguments:
             encoder (VideoEncoder*): encoder that will encode the frame
@@ -322,17 +322,18 @@ int video_encoder_encode(VideoEncoder *encoder) {
         return -1;
     }
     switch (encoder->active_encoder) {
-        case NVIDIA_ENCODER:
+        case NVIDIA_ENCODER: {
 #if OS_IS(OS_LINUX)
-            encoder->nvidia_encoders[encoder->active_encoder_idx]->ltr_action =
-                encoder->next_ltr_action;
-            nvidia_encoder_encode(encoder->nvidia_encoders[encoder->active_encoder_idx]);
+            NvidiaEncoder *nv_encoder = encoder->nvidia_encoders[encoder->active_encoder_idx];
+            nv_encoder->ltr_action = encoder->next_ltr_action;
+            nvidia_encoder_encode(nv_encoder);
             transfer_nvidia_data(encoder);
             return 0;
 #else
             LOG_FATAL("NVIDIA_ENCODER should not be used on Windows!");
             UNUSED(transfer_nvidia_data);
 #endif
+        }
         case FFMPEG_ENCODER:
             encoder->ffmpeg_encoder->ltr_action = encoder->next_ltr_action;
             if (ffmpeg_encoder_send_frame(encoder->ffmpeg_encoder)) {

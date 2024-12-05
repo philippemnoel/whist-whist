@@ -37,4 +37,6 @@ sudo apt-get install --no-install-recommends -y \
   libxdamage-dev \
   libcurl4-openssl-dev \
   nvidia-cuda-toolkit \
-  zlib1g-dev
+  zlib1g-dev \
+  awesome
+

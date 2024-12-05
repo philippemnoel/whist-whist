@@ -28,25 +28,21 @@ Includes
 #include <whist/core/whist.h>
 #include <whist/utils/color.h>
 
+#include "capture.h"
+
 /*
 ============================
 Custom Types
 ============================
 */
+typedef struct {
+    CaptureDeviceImpl base;
 
-/**
- * @brief Struct to handle using X11 for capturing the screen. The screen capture data is saved in
- * frame_data.
- */
-typedef struct X11CaptureDevice {
     Display* display;
     XImage* image;
     XShmSegmentInfo segment;
     Window root;
     int counter;
-    int width;
-    int height;
-    int pitch;
     char* frame_data;
     Damage damage;
     int event;
@@ -68,40 +64,6 @@ typedef struct X11CaptureDevice {
     Atom _NET_WM_STATE;
 } X11CaptureDevice;
 
-/*
-============================
-Public Functions
-============================
-*/
-/**
- * @brief           Create a device for capturing via X11 with the specified width, height, and DPI.
- *
- * @param width     The desired width of the device
- * @param height    The desired height of the device
- * @param dpi       The desired DPI of the device
- *
- * @returns         A pointer to the newly created X11CaptureDevice
- */
-X11CaptureDevice* create_x11_capture_device(uint32_t width, uint32_t height, uint32_t dpi);
-
-bool reconfigure_x11_capture_device(X11CaptureDevice* device, uint32_t width, uint32_t height,
-                                    uint32_t dpi);
-
-/**
- * @brief           Capture the screen with given device. Afterwards, the frame capture is stored in
- * frame_data.
- *
- * @param device    Device to use for screen captures
- *
- * @returns         0 on success, -1 on failure
- */
-int x11_capture_screen(X11CaptureDevice* device);
-
-/**
- * @brief           Destroy the given X11CaptureDevice and free it.
- *
- * @param device    Device to destroy
- */
-void destroy_x11_capture_device(X11CaptureDevice* device);
+CaptureDeviceImpl* create_x11_capture_device(CaptureDeviceInfos* infos, const char* display);
 
 #endif  // CAPTURE_X11CAPTURE_H

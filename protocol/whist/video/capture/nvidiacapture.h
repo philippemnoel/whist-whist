@@ -21,7 +21,9 @@ Includes
 #include "../nvidia-linux/NvFBCUtils.h"
 #include "../nvidia-linux/nvEncodeAPI.h"
 #include <whist/core/whist.h>
+
 #include "../cudacontext.h"
+#include "capture.h"
 
 /*
 ============================
@@ -35,10 +37,7 @@ Custom Types
  * stored on.
  */
 typedef struct {
-    // Width and height of the capture session
-    int width;
-    int height;
-    int pitch;
+    CaptureDeviceImpl base;
 
     // The gpu texture of the most recently captured frame
     CUdeviceptr p_gpu_texture;
@@ -58,27 +57,11 @@ Public Functions
 /**
  * @brief                          Creates an nvidia capture device
  *
+ * @param infos					   The capture device infos
+ * @param d						   Private user data
  * @returns                        The new capture device.
  */
-NvidiaCaptureDevice* create_nvidia_capture_device(void);
-
-/**
- * @brief                          Captures the screen into GPU pointers.
- *                                 This will also set width/height to the dimensions
- *                                 of the captured image.
- *
- * @param device                   Capture device to capture with
- *
- * @returns                        0 on success, -1 on failure
- */
-int nvidia_capture_screen(NvidiaCaptureDevice* device);
-
-/**
- * @brief                          Destroy the nvidia capture device
- *
- * @param device                   The Capture device to destroy
- */
-void destroy_nvidia_capture_device(NvidiaCaptureDevice* device);
+CaptureDeviceImpl* create_nvidia_capture_device(CaptureDeviceInfos* infos, void* d);
 
 int nvidia_bind_context(NvidiaCaptureDevice* device);
 int nvidia_release_context(NvidiaCaptureDevice* device);

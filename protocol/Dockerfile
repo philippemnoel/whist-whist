@@ -60,6 +60,8 @@ RUN apt-get update && apt-get install --allow-downgrades --no-install-recommends
     # `docs` target dependencies
     doxygen \
     coreutils \
+    xvfb \
+    awesome \
     perl \
     && apt-get autoremove -y \
     && apt-get clean \
@@ -74,6 +76,11 @@ RUN apt-get update \
     && apt-get autoremove -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# create /tmp/.X11-unix so we're able to run xvfb
+RUN mkdir -p /tmp/.X11-unix \
+	&& chmod 0777 /tmp/.X11-unix \
+	&& chmod +t /tmp/.X11-unix
 
 # Install notification utilities: dbus and libevent
 RUN apt-get update && apt-get install --allow-downgrades --no-install-recommends -y \

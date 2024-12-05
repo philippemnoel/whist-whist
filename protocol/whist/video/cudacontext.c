@@ -15,9 +15,11 @@ calling `get_active_cuda_context_ptr()`.
 Includes
 ============================
 */
-#include <dlfcn.h>
-
 #include "cudacontext.h"
+
+#if !OS_IS(OS_WIN32)
+#include <dlfcn.h>
+#endif /* OS_WIN32 */
 
 /*
 ============================
@@ -42,7 +44,6 @@ static CUCTXDESTROYV2PROC cu_ctx_destroy_v2_ptr = NULL;
 static bool cuda_initialized = false;
 
 CUcontext video_thread_cuda_context = NULL;
-CUcontext nvidia_thread_cuda_context = NULL;
 CUCTXSETCURRENTPROC cu_ctx_set_current_ptr = NULL;
 CUCTXGETCURRENTPROC cu_ctx_get_current_ptr = NULL;
 CUCTXPUSHCURRENTPROC cu_ctx_push_current_ptr = NULL;
@@ -70,6 +71,7 @@ Private Function Implementations
  *   NVFBC_TRUE in case of success, NVFBC_FALSE otherwise.
  */
 static NVFBC_BOOL cuda_load_library(void* lib_cuda) {
+#if !OS_IS(OS_WIN32)
     lib_cuda = dlopen(LIB_CUDA_NAME, RTLD_NOW);
     if (lib_cuda == NULL) {
         LOG_ERROR("Unable to open '%s'\n", LIB_CUDA_NAME);
@@ -148,6 +150,7 @@ static NVFBC_BOOL cuda_load_library(void* lib_cuda) {
         LOG_ERROR("Unable to resolve symbol 'cuMemFree_v2'\n");
         return NVFBC_FALSE;
     }
+#endif
     return NVFBC_TRUE;
 }
 
@@ -174,10 +177,10 @@ NVFBC_BOOL cuda_destroy(CUcontext* cuda_context_ptr) {
  * \return
  *   NVFBC_TRUE in case of success, NVFBC_FALSE otherwise.
  */
-NVFBC_BOOL cuda_init(CUcontext* cuda_context) {
+NVFBC_BOOL cuda_init(CUcontext* cuda_context, bool make_current) {
     void* lib_cuda = NULL;
     if (*cuda_context) {
-        LOG_DEBUG("Cuda context already exists! Doing nothing.");
+        LOG_DEBUG("Cuda context %p already exists! Doing nothing.", *cuda_context);
         return NVFBC_TRUE;
     }
     CUresult cu_res;
@@ -208,6 +211,13 @@ NVFBC_BOOL cuda_init(CUcontext* cuda_context) {
         return NVFBC_FALSE;
     }
 
+    if (!make_current) {
+        cu_res = cu_ctx_pop_current_ptr(cuda_context);
+        if (cu_res != CUDA_SUCCESS) {
+            LOG_ERROR("Error popping back the created context (result: %d)\n", cu_res);
+        }
+    }
+
     return NVFBC_TRUE;
 }
 
@@ -220,14 +230,4 @@ CUcontext* get_video_thread_cuda_context_ptr(void) {
     */
 
     return &video_thread_cuda_context;
-}
-
-CUcontext* get_nvidia_thread_cuda_context_ptr(void) {
-    /*
-        Return a pointer to the CUDA context that will be used next by the nvidia thread.
-
-        Returns:
-            (CUcontext*): pointer to the nvidia thread CUDA context
-    */
-    return &nvidia_thread_cuda_context;
 }
