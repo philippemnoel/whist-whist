@@ -28,6 +28,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"os"
 	"os/signal"
 	"strings"
@@ -42,6 +43,7 @@ import (
 	"github.com/whisthq/whist/backend/services/metadata"
 	"github.com/whisthq/whist/backend/services/scaling-service/config"
 	"github.com/whisthq/whist/backend/services/scaling-service/dbclient"
+	hosts "github.com/whisthq/whist/backend/services/scaling-service/hosts/aws"
 	algos "github.com/whisthq/whist/backend/services/scaling-service/scaling_algorithms/default" // Import as algos, short for scaling_algorithms
 	"github.com/whisthq/whist/backend/services/subscriptions"
 	"github.com/whisthq/whist/backend/services/utils"
@@ -49,6 +51,17 @@ import (
 )
 
 func main() {
+	var (
+		cleanupPeriod time.Duration
+		noCleanup bool
+	)
+
+	flag.DurationVar(&cleanupPeriod, "cleanup", time.Duration(time.Minute),
+		"the amount of time between when each cleanup thread runs")
+	flag.BoolVar(&noCleanup, "nocleanup", false, "disable asynchronous cleanup "+
+		"of unresponsive instances")
+	flag.Parse()
+
 	globalCtx, globalCancel := context.WithCancel(context.Background())
 	goroutineTracker := &sync.WaitGroup{}
 
@@ -117,28 +130,57 @@ func main() {
 	// Use a sync map since we only write the keys once but will be reading multiple
 	// times by different goroutines.
 	algorithmByRegionMap := &sync.Map{}
+	regions := config.GetEnabledRegions()
+	stopFuncs := make([]func(), 0, len(regions))
 
-	// Load default scaling algorithm for all enabled regions.
-	for _, region := range config.GetEnabledRegions() {
+	// Load and instantiate default scaling algorithm for all enabled regions.
+	for _, region := range regions {
+		name := utils.Sprintf("default-sa-%s", region)
+		handler := &hosts.AWSHost{}
+
+		if err := handler.Initialize(region); err != nil {
+			logger.Errorf("Failed to initialize host handler for region '%s'", region)
+			continue
+		}
+
+		algo := &algos.DefaultScalingAlgorithm{Host: handler, Region: region}
+
+		algo.CreateEventChans()
+		algo.CreateGraphQLClient(graphqlClient)
+		algo.CreateDBClient(dbClient)
+		algo.ProcessEvents(globalCtx, goroutineTracker)
+
+		if noCleanup {
+			logger.Infof("Cleanup disabled. Not starting cleanup threads.")
+		} else {
+			stop := CleanRegion(graphqlClient, handler, cleanupPeriod)
+			stopFuncs = append(stopFuncs, stop)
+			logger.Infof("Unresponsive instances will be pruned every %s.",
+				cleanupPeriod)
+		}
+
+		algorithmByRegionMap.Store(name, algo)
+
 		logger.Infof("There should be as close as possible to %d unassigned "+
 			"Mandelboxes available at all times in %s",
 			config.GetTargetFreeMandelboxes(region), region)
-		name := utils.Sprintf("default-sa-%s", region)
-		algorithmByRegionMap.Store(name, &algos.DefaultScalingAlgorithm{
-			Region: region,
-		})
 	}
 
-	// Instantiate scaling algorithms on allowed regions
-	algorithmByRegionMap.Range(func(key, value interface{}) bool {
-		scalingAlgorithm := value.(algos.ScalingAlgorithm)
-		scalingAlgorithm.CreateEventChans()
-		scalingAlgorithm.CreateGraphQLClient(graphqlClient)
-		scalingAlgorithm.CreateDBClient(dbClient)
-		scalingAlgorithm.ProcessEvents(globalCtx, goroutineTracker)
+	// Wait for each of our cleanup threads to finish before we exit.
+	defer func() {
+		var wg sync.WaitGroup
 
-		return true
-	})
+		for j := range stopFuncs {
+			wg.Add(1)
+
+			go func(i int) {
+				defer wg.Done()
+				stopFuncs[i]()
+			}(j)
+		}
+
+		wg.Wait()
+	}()
 
 	// Start main event loop
 	go eventLoop(globalCtx, globalCancel, serverEvents, subscriptionEvents, scheduledEvents, algorithmByRegionMap, configClient)

@@ -27,7 +27,6 @@ import (
 
 	"github.com/whisthq/whist/backend/services/scaling-service/dbclient"
 	"github.com/whisthq/whist/backend/services/scaling-service/hosts"
-	aws "github.com/whisthq/whist/backend/services/scaling-service/hosts/aws"
 	"github.com/whisthq/whist/backend/services/subscriptions"
 	"github.com/whisthq/whist/backend/services/utils"
 	logger "github.com/whisthq/whist/backend/services/whistlogger"
@@ -117,19 +116,6 @@ func (s *DefaultScalingAlgorithm) CreateDBClient(dbClient dbclient.WhistDBClient
 // events and executing the appropiate scaling actions. This function is specific for each region
 // scaling algorithm to be able to implement different strategies on each region.
 func (s *DefaultScalingAlgorithm) ProcessEvents(globalCtx context.Context, goroutineTracker *sync.WaitGroup) {
-	if s.Host == nil {
-		// TODO when multi-cloud support is introduced, figure out a way to
-		// decide which host to use. For now default to AWS.
-		handler := &aws.AWSHost{}
-		err := handler.Initialize(s.Region)
-
-		if err != nil {
-			logger.Errorf("error starting host in %s: %s", s.Region, err)
-		}
-
-		s.Host = handler
-	}
-
 	// Start algorithm main event loop
 	// Track this goroutine so we can wait for it to
 	// finish if the global context gets cancelled.

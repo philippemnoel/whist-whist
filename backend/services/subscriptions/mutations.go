@@ -2,6 +2,43 @@ package subscriptions
 
 import "github.com/hasura/go-graphql-client"
 
+type (
+
+	// LockBrokenInstances takes two arguments: region and maxAge. The region
+	// argument matches values from the region column of the whist.instances
+	// table. The maxAge argument is a timestamptz that specifies the time after
+	// which, if an instance has not updated itself in the database, it will be
+	// considered broken. This query gives the status column of all rows of the
+	// database that have an updated_at timestamp that is older than maxAge the
+	// TERMINATING status. It returns the instance_ids of the affected rows.
+	LockBrokenInstances struct {
+		Response struct {
+			Count graphql.Int `graphql:"affected_rows"`
+			Hosts []struct {
+				ID graphql.String `graphql:"id"`
+			} `graphql:"returning"`
+		} `graphql:"update_whist_instances(where: {region: {_eq: $region}, updated_at: {_lt: $maxAge}, status: {_in: [\"ACTIVE\", \"TERMINATING\"]}}, _set: {status: \"TERMINATING\"})"`
+	}
+
+	// TerminateLockedInstances takes two arguments: region and ids. The region
+	// argument matches values from the region column of the whist.instances
+	// table. The ids argument specifies the instance_ids of the instances to
+	// terminate. All of these instances should already be locked, i.e. the status
+	// column of each of their rows in the whist.instances database should have
+	// TERMINATING.
+	TerminateLockedInstances struct {
+		MandelboxesResponse struct {
+			Count graphql.Int `graphql:"affected_rows"`
+		} `graphql:"delete_whist_mandelboxes(where: {instance: {region: {_eq: $region}, id: {_in: $ids}, status: {_eq: \"TERMINATING\"}}})"`
+		InstancesResponse struct {
+			Count graphql.Int `graphql:"affected_rows"`
+			Hosts []struct {
+				ID graphql.String `graphql:"id"`
+			} `graphql:"returning"`
+		} `graphql:"delete_whist_instances(where: {region: {_eq: $region}, id: {_in: $ids}, status: {_eq: \"TERMINATING\"}})"`
+	}
+)
+
 var (
 
 	// InsertInstances inserts multiple instances to the database.

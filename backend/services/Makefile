@@ -162,11 +162,11 @@ run_host_service_dev: build
 
 run_scaling_service: build
 	$(info running $(BUILD_FOLDER)/scaling-service with localdev configuration...)
-	APP_ENV=localdev $(BUILD_FOLDER)/scaling-service
+	APP_ENV=localdev $(BUILD_FOLDER)/scaling-service -nocleanup
 
 run_scaling_service_localdevwithdb: build
 	$(info running $(BUILD_FOLDER)/scaling-service with localdevwithdb configuration...)
-	APP_ENV=localdevwithdb $(BUILD_FOLDER)/scaling-service
+	APP_ENV=localdevwithdb $(BUILD_FOLDER)/scaling-service -nocleanup
 
 run_scaling_service_dev: build
 	$(info running $(BUILD_FOLDER)/scaling-service with dev (deployed) configuration...)

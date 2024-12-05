@@ -11,6 +11,7 @@ package dbclient
 
 import (
 	"context"
+	"time"
 
 	"github.com/whisthq/whist/backend/services/subscriptions"
 )
@@ -37,6 +38,9 @@ type WhistDBClient interface {
 	QueryUserMandelboxes(context.Context, subscriptions.WhistGraphQLClient, string) ([]subscriptions.Mandelbox, error)
 	InsertMandelboxes(context.Context, subscriptions.WhistGraphQLClient, []subscriptions.Mandelbox) (int, error)
 	UpdateMandelbox(context.Context, subscriptions.WhistGraphQLClient, subscriptions.Mandelbox) (int, error)
+
+	LockBrokenInstances(context.Context, subscriptions.WhistGraphQLClient, string, time.Time) ([]string, error)
+	TerminateLockedInstances(context.Context, subscriptions.WhistGraphQLClient, string, []string) ([]string, error)
 }
 
 // DBClient implements `WhistDBClient`, it is the default database

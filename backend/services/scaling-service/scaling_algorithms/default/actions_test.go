@@ -5,6 +5,7 @@ package scaling_algorithms
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
 	"testing"
@@ -191,6 +192,14 @@ func (db *mockDBClient) UpdateMandelbox(_ context.Context, _ subscriptions.Whist
 	}
 
 	return affected, nil
+}
+
+func (db *mockDBClient) LockBrokenInstances(context.Context, subscriptions.WhistGraphQLClient, string, time.Time) ([]string, error) {
+	return nil, errors.New("Not implemented")
+}
+
+func (db *mockDBClient) TerminateLockedInstances(context.Context, subscriptions.WhistGraphQLClient, string, []string) ([]string, error) {
+	return nil, errors.New("Not implemented")
 }
 
 // mockHostHandler is used to test all interactions with cloud providers
