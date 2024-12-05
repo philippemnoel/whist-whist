@@ -1,0 +1,20 @@
+diff --git a/skia/BUILD.gn b/skia/BUILD.gn
+index 5c3a90ee7fcdc..9f6eaaea42675 100644
+--- a/skia/BUILD.gn
++++ b/skia/BUILD.gn
+@@ -152,8 +152,13 @@ config("skia_library_config") {
+   # Settings for text blitting, chosen to approximate the system browser.
+   if (is_linux || is_chromeos) {
+     defines += [
+-      "SK_GAMMA_EXPONENT=1.2",
+-      "SK_GAMMA_CONTRAST=0.2",
++#     Setting the value of contrast, exponent and srgb same as mac, so that the
++#     strikecache will have the same key during font data deserialization on the
++#     mac client browser.
++#      "SK_GAMMA_EXPONENT=1.2",
++#      "SK_GAMMA_CONTRAST=0.2",
++      "SK_GAMMA_SRGB",
++      "SK_GAMMA_CONTRAST=0.0",
+     ]
+   } else if (is_android) {
+     defines += [

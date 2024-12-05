@@ -1,0 +1,14 @@
+diff --git a/gpu/command_buffer/client/webgpu_cmd_helper.cc b/gpu/command_buffer/client/webgpu_cmd_helper.cc
+index e306d38aed27e..8354499592fed 100644
+--- a/gpu/command_buffer/client/webgpu_cmd_helper.cc
++++ b/gpu/command_buffer/client/webgpu_cmd_helper.cc
+@@ -12,5 +12,9 @@ WebGPUCmdHelper::WebGPUCmdHelper(CommandBuffer* command_buffer)
+ 
+ WebGPUCmdHelper::~WebGPUCmdHelper() = default;
+ 
++CommandBufferType WebGPUCmdHelper::GetCommandBufferType() const {
++  return CommandBufferType::WEBGPU;
++}
++
+ }  // namespace webgpu
+ }  // namespace gpu

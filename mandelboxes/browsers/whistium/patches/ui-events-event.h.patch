@@ -1,0 +1,16 @@
+diff --git a/ui/events/event.h b/ui/events/event.h
+index ae5e40ab11e0c..d67a6eda2606e 100644
+--- a/ui/events/event.h
++++ b/ui/events/event.h
+@@ -117,9 +117,9 @@ class EVENTS_EXPORT Event {
+   // The following methods return true if the respective keys were pressed at
+   // the time the event was created.
+   bool IsShiftDown() const { return (flags_ & EF_SHIFT_DOWN) != 0; }
+-  bool IsControlDown() const { return (flags_ & EF_CONTROL_DOWN) != 0; }
++  bool IsControlDown() const { return (flags_ & EF_COMMAND_DOWN) != 0; }
+   bool IsAltDown() const { return (flags_ & EF_ALT_DOWN) != 0; }
+-  bool IsCommandDown() const { return (flags_ & EF_COMMAND_DOWN) != 0; }
++  bool IsCommandDown() const { return (flags_ & EF_CONTROL_DOWN) != 0; }
+   bool IsAltGrDown() const { return (flags_ & EF_ALTGR_DOWN) != 0; }
+   bool IsCapsLockOn() const { return (flags_ & EF_CAPS_LOCK_ON) != 0; }
+ 

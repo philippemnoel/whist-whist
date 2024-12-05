@@ -1,0 +1,14 @@
+diff --git a/chrome/browser/ui/views/bookmarks/bookmark_context_menu.cc b/chrome/browser/ui/views/bookmarks/bookmark_context_menu.cc
+index 116e2b842fcb7..238fa1cb005c6 100644
+--- a/chrome/browser/ui/views/bookmarks/bookmark_context_menu.cc
++++ b/chrome/browser/ui/views/bookmarks/bookmark_context_menu.cc
+@@ -81,9 +81,6 @@ void BookmarkContextMenu::InstallPreRunCallback(base::OnceClosure callback) {
+ 
+ void BookmarkContextMenu::RunMenuAt(const gfx::Point& point,
+                                     ui::MenuSourceType source_type) {
+-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode))
+-    return;
+-
+   if (!PreRunCallback().is_null())
+     std::move(PreRunCallback()).Run();
+ 

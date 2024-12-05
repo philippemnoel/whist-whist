@@ -1,0 +1,14 @@
+diff --git a/gpu/command_buffer/client/gles2_implementation.cc b/gpu/command_buffer/client/gles2_implementation.cc
+index 7c33d18041938..8f6ce21210b08 100644
+--- a/gpu/command_buffer/client/gles2_implementation.cc
++++ b/gpu/command_buffer/client/gles2_implementation.cc
+@@ -7374,8 +7374,7 @@ bool GLES2Implementation::PackStringsToBucket(GLsizei count,
+         DCHECK(copy_size + 1 == buffer.size());
+         reinterpret_cast<char*>(buffer.address())[copy_size] = 0;
+       }
+-      helper_->SetBucketData(kResultBucketId, offset, buffer.size(),
+-                             buffer.shm_id(), buffer.offset());
++      helper_->SetBucketData(kResultBucketId, offset, buffer);
+       offset += buffer.size();
+       src += buffer.size();
+       size -= buffer.size();

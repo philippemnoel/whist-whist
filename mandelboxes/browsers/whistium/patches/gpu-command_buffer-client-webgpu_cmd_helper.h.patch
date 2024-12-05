@@ -1,0 +1,13 @@
+diff --git a/gpu/command_buffer/client/webgpu_cmd_helper.h b/gpu/command_buffer/client/webgpu_cmd_helper.h
+index 5e7ffd1d2230f..f75ea6dbf0b52 100644
+--- a/gpu/command_buffer/client/webgpu_cmd_helper.h
++++ b/gpu/command_buffer/client/webgpu_cmd_helper.h
+@@ -24,6 +24,8 @@ class WEBGPU_EXPORT WebGPUCmdHelper : public CommandBufferHelper {
+ 
+   ~WebGPUCmdHelper() override;
+ 
++  CommandBufferType GetCommandBufferType() const override;
++
+ // Include the auto-generated part of this class. We split this because it
+ // means we can easily edit the non-auto generated parts right here in this
+ // file instead of having to edit some template or the code generator.

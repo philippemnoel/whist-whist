@@ -1,0 +1,22 @@
+diff --git a/ui/base/accelerators/accelerator.cc b/ui/base/accelerators/accelerator.cc
+index 2468b2c588182..e8d2981ff7298 100644
+--- a/ui/base/accelerators/accelerator.cc
++++ b/ui/base/accelerators/accelerator.cc
+@@ -205,7 +205,7 @@ bool Accelerator::IsShiftDown() const {
+ }
+ 
+ bool Accelerator::IsCtrlDown() const {
+-  return (modifiers_ & EF_CONTROL_DOWN) != 0;
++  return (modifiers_ & EF_COMMAND_DOWN) != 0;
+ }
+ 
+ bool Accelerator::IsAltDown() const {
+@@ -217,7 +217,7 @@ bool Accelerator::IsAltGrDown() const {
+ }
+ 
+ bool Accelerator::IsCmdDown() const {
+-  return (modifiers_ & EF_COMMAND_DOWN) != 0;
++  return (modifiers_ & EF_CONTROL_DOWN) != 0;
+ }
+ 
+ bool Accelerator::IsFunctionDown() const {

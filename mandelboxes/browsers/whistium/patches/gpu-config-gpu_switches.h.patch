@@ -1,0 +1,12 @@
+diff --git a/gpu/config/gpu_switches.h b/gpu/config/gpu_switches.h
+index f4d43cd83e5d2..79d05dd3e2b8a 100644
+--- a/gpu/config/gpu_switches.h
++++ b/gpu/config/gpu_switches.h
+@@ -38,6 +38,7 @@ GPU_EXPORT extern const char kVulkanHeapMemoryLimitMb[];
+ GPU_EXPORT extern const char kVulkanSyncCpuMemoryLimitMb[];
+ GPU_EXPORT extern const char kForceBrowserCrashOnGpuCrash[];
+ GPU_EXPORT extern const char kGpuWatchdogTimeoutSeconds[];
++GPU_EXPORT extern const char kEnableGpuCommandStreaming[];
+ 
+ }  // namespace switches
+ 

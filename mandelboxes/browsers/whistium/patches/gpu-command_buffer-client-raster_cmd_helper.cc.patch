@@ -1,0 +1,14 @@
+diff --git a/gpu/command_buffer/client/raster_cmd_helper.cc b/gpu/command_buffer/client/raster_cmd_helper.cc
+index 191dfa3b36a68..defe69573e6b3 100644
+--- a/gpu/command_buffer/client/raster_cmd_helper.cc
++++ b/gpu/command_buffer/client/raster_cmd_helper.cc
+@@ -12,5 +12,9 @@ RasterCmdHelper::RasterCmdHelper(CommandBuffer* command_buffer)
+ 
+ RasterCmdHelper::~RasterCmdHelper() = default;
+ 
++CommandBufferType RasterCmdHelper::GetCommandBufferType() const {
++  return CommandBufferType::RASTER;
++}
++
+ }  // namespace raster
+ }  // namespace gpu

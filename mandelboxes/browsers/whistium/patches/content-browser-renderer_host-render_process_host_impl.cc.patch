@@ -1,0 +1,12 @@
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index b74b4c2028ccb..1e61c0718d691 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3281,6 +3281,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+     switches::kEnableTouchDragDrop,
+     switches::kEnableUnsafeFastJSCalls,
+     switches::kEnableUnsafeWebGPU,
++    switches::kEnableGpuCommandStreaming,
+     switches::kEnableViewport,
+     switches::kEnableVtune,
+     switches::kEnableWebGLDeveloperExtensions,

@@ -1,0 +1,87 @@
+diff --git a/gpu/command_buffer/client/cmd_buffer_helper.h b/gpu/command_buffer/client/cmd_buffer_helper.h
+index 5d0d6a9a8ed2b..89361a2d3a952 100644
+--- a/gpu/command_buffer/client/cmd_buffer_helper.h
++++ b/gpu/command_buffer/client/cmd_buffer_helper.h
+@@ -17,6 +17,7 @@
+ #include "base/time/time.h"
+ #include "base/trace_event/memory_dump_provider.h"
+ #include "build/build_config.h"
++#include "gpu/command_buffer/client/transfer_buffer.h"
+ #include "gpu/command_buffer/common/cmd_buffer_common.h"
+ #include "gpu/command_buffer/common/command_buffer.h"
+ #include "gpu/command_buffer/common/context_result.h"
+@@ -35,6 +36,16 @@ const int kPeriodicFlushDelayInMicroseconds = 500;
+ const int kAutoFlushSmall = 16;  // 1/16 of the buffer
+ const int kAutoFlushBig = 2;     // 1/2 of the buffer
+ 
++enum class CommandBufferType {
++  GLES,
++  RASTER,
++  WEBGPU,
++  MEM,
++  TRANSFER_CACHE,
++  FONT,
++  FLUSH,
++};
++
+ // Command buffer helper class. This class simplifies ring buffer management:
+ // it will allocate the buffer, give it to the buffer interface, and let the
+ // user add commands to it, while taking care of the synchronization (put and
+@@ -204,6 +215,10 @@ class GPU_EXPORT CommandBufferHelper {
+     if (cmd) {
+       cmd->Init(token);
+     }
++    // SetToken command is immediately, so that the corresponding
++    // shared memory buffers can be freed on the client side before
++    // the next shared memory buffer packet is sent from the server.
++    SendCommandsToWhist();
+   }
+ 
+   void SetBucketSize(uint32_t bucket_id, uint32_t size) {
+@@ -215,14 +230,17 @@ class GPU_EXPORT CommandBufferHelper {
+ 
+   void SetBucketData(uint32_t bucket_id,
+                      uint32_t offset,
+-                     uint32_t size,
+-                     uint32_t shared_memory_id,
+-                     uint32_t shared_memory_offset) {
++                     ScopedTransferBufferPtr &buffer) {
++    SendBufferToWhist(CommandBufferType::MEM, buffer.address(), buffer.size());
+     cmd::SetBucketData* cmd = GetCmdSpace<cmd::SetBucketData>();
+     if (cmd) {
+-      cmd->Init(bucket_id, offset, size, shared_memory_id,
+-                shared_memory_offset);
++      cmd->Init(bucket_id, offset, buffer.size(), buffer.shm_id(),
++                buffer.offset());
+     }
++    // SetBucketData command is sent immediately, to preserve ordering of packets
++    // that depend on the shared memory data. Otherwise the shared memory buffer
++    // sent earlier will get overwritten by some other command's buffer.
++    SendCommandsToWhist();
+   }
+ 
+   void SetBucketDataImmediate(uint32_t bucket_id,
+@@ -290,6 +308,11 @@ class GPU_EXPORT CommandBufferHelper {
+ 
+   int32_t GetPutOffsetForTest() const { return put_; }
+ 
++  void SendBufferToWhist(CommandBufferType type, void* buffer, int32_t shm_size);
++  void SendCommandsToWhist();
++
++  virtual CommandBufferType GetCommandBufferType() const = 0;
++
+  private:
+   void CalcImmediateEntries(int waiting_count);
+   bool AllocateRingBuffer();
+@@ -348,6 +371,11 @@ class GPU_EXPORT CommandBufferHelper {
+   // Can be used to track when prior commands have been flushed.
+   uint32_t flush_generation_ = 0;
+ 
++  bool is_renderer_process_ = false;
++  int sock_fd_ = -1;
++  char *socket_buffer = NULL;
++  int32_t last_whist_put_ = 0;
++
+   friend class CommandBufferHelperTest;
+ };
+ 

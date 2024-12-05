@@ -1,0 +1,13 @@
+diff --git a/third_party/blink/renderer/core/exported/web_plugin_container_impl.cc b/third_party/blink/renderer/core/exported/web_plugin_container_impl.cc
+index 27fbc0f8b7ec4..52d984f3a2c44 100644
+--- a/third_party/blink/renderer/core/exported/web_plugin_container_impl.cc
++++ b/third_party/blink/renderer/core/exported/web_plugin_container_impl.cc
+@@ -111,7 +111,7 @@ namespace blink {
+ 
+ namespace {
+ 
+-#if BUILDFLAG(IS_MAC)
++#if 1 //BUILDFLAG(IS_MAC)
+ const WebInputEvent::Modifiers kEditingModifier = WebInputEvent::kMetaKey;
+ #else
+ const WebInputEvent::Modifiers kEditingModifier = WebInputEvent::kControlKey;

@@ -1,0 +1,13 @@
+diff --git a/gpu/command_buffer/client/gles2_cmd_helper.h b/gpu/command_buffer/client/gles2_cmd_helper.h
+index a403753f54999..6e032d3946997 100644
+--- a/gpu/command_buffer/client/gles2_cmd_helper.h
++++ b/gpu/command_buffer/client/gles2_cmd_helper.h
+@@ -24,6 +24,8 @@ class GPU_GLES2_EXPORT GLES2CmdHelper : public CommandBufferHelper {
+ 
+   ~GLES2CmdHelper() override;
+ 
++  CommandBufferType GetCommandBufferType() const override;
++
+   // Include the auto-generated part of this class. We split this because it
+   // means we can easily edit the non-auto generated parts right here in this
+   // file instead of having to edit some template or the code generator.

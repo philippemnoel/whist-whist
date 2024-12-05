@@ -1,0 +1,14 @@
+diff --git a/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc b/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc
+index dd729e8186d03..aeed067f3f4f6 100644
+--- a/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc
++++ b/chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.cc
+@@ -362,9 +362,6 @@ void RenderViewContextMenuViews::ExecOpenInReadAnything() {
+ }
+ 
+ void RenderViewContextMenuViews::Show() {
+-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode))
+-    return;
+-
+   // Menus need a Widget to work. If we're not the active tab we won't
+   // necessarily be in a widget.
+   views::Widget* top_level_widget = GetTopLevelWidget();

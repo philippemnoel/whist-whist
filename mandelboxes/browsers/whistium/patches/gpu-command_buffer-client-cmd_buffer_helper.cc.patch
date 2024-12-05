@@ -1,0 +1,155 @@
+diff --git a/gpu/command_buffer/client/cmd_buffer_helper.cc b/gpu/command_buffer/client/cmd_buffer_helper.cc
+index 8813dac7f22d0..200e00f2f46a4 100644
+--- a/gpu/command_buffer/client/cmd_buffer_helper.cc
++++ b/gpu/command_buffer/client/cmd_buffer_helper.cc
+@@ -7,8 +7,13 @@
+ #include "gpu/command_buffer/client/cmd_buffer_helper.h"
+ 
+ #include <stdint.h>
++#include <string.h>
++#include <sys/types.h>
++#include <sys/socket.h>
++#include <sys/un.h>
+ 
+ #include <algorithm>
++#include "base/command_line.h"
+ #include "base/logging.h"
+ #include "base/strings/stringprintf.h"
+ #include "base/threading/thread_task_runner_handle.h"
+@@ -19,10 +24,14 @@
+ #include "base/trace_event/trace_event.h"
+ #include "gpu/command_buffer/common/buffer.h"
+ #include "gpu/command_buffer/common/command_buffer.h"
++#include "gpu/command_buffer/service/common_decoder.h"
+ #include "gpu/command_buffer/common/constants.h"
++#include "gpu/config/gpu_switches.h"
+ 
+ namespace gpu {
+ 
++#define IPC_FILE "/home/whist/gpu_commands"
++
+ CommandBufferHelper::CommandBufferHelper(CommandBuffer* command_buffer)
+     : command_buffer_(command_buffer) {}
+ 
+@@ -104,6 +113,32 @@ bool CommandBufferHelper::AllocateRingBuffer() {
+ 
+ void CommandBufferHelper::SetGetBuffer(int32_t id,
+                                        scoped_refptr<Buffer> buffer) {
++  is_renderer_process_ = base::trace_event::TraceLog::GetInstance()->process_name() == "Renderer";
++  const base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
++
++  if (is_renderer_process_ && command_line.HasSwitch(switches::kEnableGpuCommandStreaming) &&
++      GetCommandBufferType() == CommandBufferType::RASTER && sock_fd_ == -1) {
++    if ((sock_fd_ = socket (AF_UNIX, SOCK_SEQPACKET, 0)) == -1) {
++      int err_socket = errno;
++      LOG(ERROR) << "Could not open the socket for GPU command streaming, error=" << strerror(err_socket);
++      return;
++    }
++    LOG(INFO) << "Successfully opened the socket for GPU command streaming";
++
++    struct sockaddr_un socket_address;
++    memset (&socket_address, 0, sizeof (struct sockaddr_un));
++    socket_address.sun_family = AF_UNIX;
++    strncpy (socket_address.sun_path, IPC_FILE, sizeof (socket_address.sun_path) - 1);
++
++    if (connect (sock_fd_, (const struct sockaddr *) &socket_address, sizeof (struct sockaddr_un)) == -1) {
++      sock_fd_ = -1;
++      int err_socket = errno;
++      LOG(ERROR) << "Could not connect to the socket for GPU command streaming, error=" << strerror(err_socket);
++      return;
++    }
++    LOG(INFO) << "Successfully connected the socket for GPU command streaming";
++  }
++
+   command_buffer_->SetGetBuffer(id);
+   ring_buffer_ = std::move(buffer);
+   ring_buffer_id_ = id;
+@@ -117,6 +152,7 @@ void CommandBufferHelper::SetGetBuffer(int32_t id,
+   // No need to query it through IPC.
+   put_ = 0;
+   last_flush_put_ = 0;
++  last_whist_put_ = 0;
+   last_ordering_barrier_put_ = 0;
+   cached_get_offset_ = 0;
+   service_on_old_buffer_ = true;
+@@ -135,6 +171,9 @@ void CommandBufferHelper::FreeRingBuffer() {
+ 
+ gpu::ContextResult CommandBufferHelper::Initialize(uint32_t ring_buffer_size) {
+   ring_buffer_size_ = ring_buffer_size;
++  if (socket_buffer != NULL)
++    free(socket_buffer);
++  socket_buffer = (char *)malloc(ring_buffer_size_);
+   if (!AllocateRingBuffer()) {
+     // This would fail if CreateTransferBuffer fails, which will not fail for
+     // transient reasons such as context loss. See http://crrev.com/c/720269
+@@ -147,6 +186,8 @@ gpu::ContextResult CommandBufferHelper::Initialize(uint32_t ring_buffer_size) {
+ 
+ CommandBufferHelper::~CommandBufferHelper() {
+   FreeRingBuffer();
++  if (socket_buffer != NULL)
++    free(socket_buffer);
+ }
+ 
+ void CommandBufferHelper::UpdateCachedState(const CommandBuffer::State& state) {
+@@ -169,6 +210,34 @@ bool CommandBufferHelper::WaitForGetOffsetInRange(int32_t start, int32_t end) {
+   return !context_lost_;
+ }
+ 
++void CommandBufferHelper::SendBufferToWhist(CommandBufferType type, void* buffer,
++                                            int32_t shm_size) {
++  if (sock_fd_ == -1)
++    return;
++  if (shm_size <= 0)
++    return;
++  socket_buffer[0] = static_cast<char>(type);
++  memcpy(socket_buffer + 1, buffer, shm_size);
++  if (write(sock_fd_, socket_buffer, shm_size + 1) == -1) {
++      DLOG(ERROR) << "Could not send the command data to Whist";
++  }
++}
++
++void CommandBufferHelper::SendCommandsToWhist() {
++  if (sock_fd_ == -1)
++    return;
++  DCHECK(put_ >= last_whist_put_);
++  if (put_ == last_whist_put_)
++    return;
++  socket_buffer[0] = static_cast<char>(GetCommandBufferType());
++  int size = (put_ - last_whist_put_) * sizeof (CommandBufferEntry);
++  memcpy(socket_buffer + 1, &entries_[last_whist_put_], size);
++  if (write(sock_fd_, socket_buffer, size + 1) == -1) {
++      DLOG(ERROR) << "Could not send the command buffer to Whist";
++  }
++  last_whist_put_ = put_;
++}
++
+ void CommandBufferHelper::Flush() {
+   TRACE_EVENT0("gpu", "CommandBufferHelper::Flush");
+   // Wrap put_ before flush.
+@@ -177,6 +246,15 @@ void CommandBufferHelper::Flush() {
+ 
+   if (HaveRingBuffer()) {
+     last_flush_time_ = base::TimeTicks::Now();
++    SendCommandsToWhist();
++    if (sock_fd_ != -1) {
++      // Flush is sent as a separate packet type, so that CommandBufferHelper::Flush()
++      // can be called at the appropriate time on the client-side browser.
++      socket_buffer[0] = static_cast<char>(CommandBufferType::FLUSH);
++      if (write(sock_fd_, socket_buffer, 1) == -1) {
++          DLOG(ERROR) << "Could not send the command buffer to Whist";
++      }
++    }
+     last_flush_put_ = put_;
+     last_ordering_barrier_put_ = put_;
+     command_buffer_->Flush(put_);
+@@ -244,6 +322,10 @@ int32_t CommandBufferHelper::InsertToken() {
+   if (cmd) {
+     token_ = (token_ + 1) & 0x7FFFFFFF;
+     cmd->Init(token_);
++    // SetToken command is immediately, so that the corresponding
++    // shared memory buffers can be freed on the client side before
++    // the next shared memory buffer packet is sent from the server.
++    SendCommandsToWhist();
+     if (token_ == 0) {
+       TRACE_EVENT0("gpu", "CommandBufferHelper::InsertToken(wrapped)");
+       bool finished = Finish();  // we wrapped

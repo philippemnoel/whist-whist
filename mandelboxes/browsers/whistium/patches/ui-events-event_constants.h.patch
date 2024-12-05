@@ -1,0 +1,13 @@
+diff --git a/ui/events/event_constants.h b/ui/events/event_constants.h
+index c16556cd8c1d8..04c1dd9ee1568 100644
+--- a/ui/events/event_constants.h
++++ b/ui/events/event_constants.h
+@@ -49,7 +49,7 @@ enum EventFlags {
+ // An artificial value used to bridge platform differences.
+ // Many commands on Mac as Cmd+Key are the counterparts of
+ // Ctrl+Key on other platforms.
+-#if BUILDFLAG(IS_APPLE)
++#if 1 //BUILDFLAG(IS_APPLE)
+   EF_PLATFORM_ACCELERATOR = EF_COMMAND_DOWN,
+ #else
+   EF_PLATFORM_ACCELERATOR = EF_CONTROL_DOWN,

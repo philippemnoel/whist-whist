@@ -1,0 +1,14 @@
+diff --git a/gpu/command_buffer/client/implementation_base.cc b/gpu/command_buffer/client/implementation_base.cc
+index 0492f62a9f77e..1414b6bb4350f 100644
+--- a/gpu/command_buffer/client/implementation_base.cc
++++ b/gpu/command_buffer/client/implementation_base.cc
+@@ -331,8 +331,7 @@ void ImplementationBase::SetBucketContents(uint32_t bucket_id,
+       }
+       memcpy(buffer.address(), static_cast<const int8_t*>(data) + offset,
+              buffer.size());
+-      helper_->SetBucketData(bucket_id, offset, buffer.size(), buffer.shm_id(),
+-                             buffer.offset());
++      helper_->SetBucketData(bucket_id, offset, buffer);
+       offset += buffer.size();
+       size -= buffer.size();
+     }

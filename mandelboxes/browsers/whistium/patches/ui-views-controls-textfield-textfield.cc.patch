@@ -1,0 +1,17 @@
+diff --git a/ui/views/controls/textfield/textfield.cc b/ui/views/controls/textfield/textfield.cc
+index ad0c697c839e0..62f84dd9e7a01 100644
+--- a/ui/views/controls/textfield/textfield.cc
++++ b/ui/views/controls/textfield/textfield.cc
+@@ -249,9 +249,9 @@ Textfield::Textfield()
+   // These allow BrowserView to pass edit commands from the Chrome menu to us
+   // when we're focused by simply asking the FocusManager to
+   // ProcessAccelerator() with the relevant accelerators.
+-  AddAccelerator(ui::Accelerator(ui::VKEY_X, ui::EF_CONTROL_DOWN));
+-  AddAccelerator(ui::Accelerator(ui::VKEY_C, ui::EF_CONTROL_DOWN));
+-  AddAccelerator(ui::Accelerator(ui::VKEY_V, ui::EF_CONTROL_DOWN));
++  AddAccelerator(ui::Accelerator(ui::VKEY_X, ui::EF_COMMAND_DOWN));
++  AddAccelerator(ui::Accelerator(ui::VKEY_C, ui::EF_COMMAND_DOWN));
++  AddAccelerator(ui::Accelerator(ui::VKEY_V, ui::EF_COMMAND_DOWN));
+ #endif
+ 
+   // Sometimes there are additional ignored views, such as the View representing

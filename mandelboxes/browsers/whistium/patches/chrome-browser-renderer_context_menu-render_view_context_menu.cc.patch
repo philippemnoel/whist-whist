@@ -1,0 +1,30 @@
+diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+index e6efbf1e457ae..aba8b15bec745 100644
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+@@ -1366,14 +1366,6 @@ void RenderViewContextMenu::AppendLinkItems() {
+       AppendProtocolHandlerSubMenu();
+     }
+ 
+-    // Links to system web app can't be opened in incognito / off-the-record.
+-    if (!link_system_app_type) {
+-      menu_model_.AddItemWithStringId(
+-          IDC_CONTENT_CONTEXT_OPENLINKOFFTHERECORD,
+-          in_app ? IDS_CONTENT_CONTEXT_OPENLINKOFFTHERECORD_INAPP
+-                 : IDS_CONTENT_CONTEXT_OPENLINKOFFTHERECORD);
+-    }
+-
+     AppendOpenInWebAppLinkItems();
+     AppendOpenWithLinkItems();
+ 
+@@ -1755,6 +1747,10 @@ void RenderViewContextMenu::AppendExitFullscreenItem() {
+   if (!browser)
+     return;
+ 
++  // If kiosk mode, Whist has enabled the context menu so we must remove this option.
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode))
++    return;
++
+   // Only show item if in fullscreen mode.
+   if (!browser->exclusive_access_manager()
+            ->fullscreen_controller()

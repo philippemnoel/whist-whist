@@ -1,0 +1,12 @@
+diff --git a/gpu/config/gpu_switches.cc b/gpu/config/gpu_switches.cc
+index 17d91d4bb66ca..a60caa3875fe2 100644
+--- a/gpu/config/gpu_switches.cc
++++ b/gpu/config/gpu_switches.cc
+@@ -117,4 +117,7 @@ const char kForceBrowserCrashOnGpuCrash[] = "force-browser-crash-on-gpu-crash";
+ // Override value for the GPU watchdog timeout in seconds.
+ const char kGpuWatchdogTimeoutSeconds[] = "gpu-watchdog-timeout-seconds";
+ 
++// Enables GPU command streaming for cloud tabs
++const char kEnableGpuCommandStreaming[] = "enable-gpu-command-streaming";
++
+ }  // namespace switches

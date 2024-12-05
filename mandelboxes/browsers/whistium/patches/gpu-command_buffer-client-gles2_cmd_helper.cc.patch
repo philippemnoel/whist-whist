@@ -1,0 +1,15 @@
+diff --git a/gpu/command_buffer/client/gles2_cmd_helper.cc b/gpu/command_buffer/client/gles2_cmd_helper.cc
+index 362cadf7eb59c..45b704c8af2c6 100644
+--- a/gpu/command_buffer/client/gles2_cmd_helper.cc
++++ b/gpu/command_buffer/client/gles2_cmd_helper.cc
+@@ -13,6 +13,10 @@ GLES2CmdHelper::GLES2CmdHelper(CommandBuffer* command_buffer)
+ 
+ GLES2CmdHelper::~GLES2CmdHelper() = default;
+ 
++CommandBufferType GLES2CmdHelper::GetCommandBufferType() const {
++  return CommandBufferType::GLES;
++}
++
+ }  // namespace gles2
+ }  // namespace gpu
+ 

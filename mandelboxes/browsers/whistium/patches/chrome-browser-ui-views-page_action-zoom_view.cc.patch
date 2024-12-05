@@ -1,0 +1,22 @@
+diff --git a/chrome/browser/ui/views/page_action/zoom_view.cc b/chrome/browser/ui/views/page_action/zoom_view.cc
+index fba0a8ce686d1..a256348e4ce9f 100644
+--- a/chrome/browser/ui/views/page_action/zoom_view.cc
++++ b/chrome/browser/ui/views/page_action/zoom_view.cc
+@@ -34,6 +34,9 @@ void ZoomView::UpdateImpl() {
+ }
+ 
+ bool ZoomView::ShouldBeVisible(bool can_show_bubble) const {
++  // We don't want the server to ever show the zoom bubble view
++  return false;
++  /*
+   if (delegate()->ShouldHidePageActionIcons())
+     return false;
+ 
+@@ -47,6 +50,7 @@ bool ZoomView::ShouldBeVisible(bool can_show_bubble) const {
+   zoom::ZoomController* zoom_controller =
+       zoom::ZoomController::FromWebContents(GetWebContents());
+   return zoom_controller && !zoom_controller->IsAtDefaultZoom();
++  */
+ }
+ 
+ bool ZoomView::HasAssociatedBubble() const {

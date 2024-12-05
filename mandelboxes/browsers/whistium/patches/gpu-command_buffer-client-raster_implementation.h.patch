@@ -1,0 +1,20 @@
+diff --git a/gpu/command_buffer/client/raster_implementation.h b/gpu/command_buffer/client/raster_implementation.h
+index fdd547e776b95..f36db34772074 100644
+--- a/gpu/command_buffer/client/raster_implementation.h
++++ b/gpu/command_buffer/client/raster_implementation.h
+@@ -276,6 +276,7 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
+   std::unique_ptr<cc::TransferCacheSerializeHelper>
+   CreateTransferCacheHelperForTesting();
+   void SetRasterMappedBufferForTesting(ScopedTransferBufferPtr buffer);
++  raw_ptr<RasterCmdHelper> helper_;
+ 
+  private:
+   class TransferCacheSerializeHelperImpl;
+@@ -398,7 +399,6 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
+   void FailGLError(GLenum /* error */) {}
+ #endif
+ 
+-  raw_ptr<RasterCmdHelper> helper_;
+   std::string last_error_;
+   gles2::DebugMarkerManager debug_marker_manager_;
+   std::string this_in_hex_;

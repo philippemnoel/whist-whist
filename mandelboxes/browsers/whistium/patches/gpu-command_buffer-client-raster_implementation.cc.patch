@@ -1,0 +1,38 @@
+diff --git a/gpu/command_buffer/client/raster_implementation.cc b/gpu/command_buffer/client/raster_implementation.cc
+index 2a43b28a56c2d..a391674782466 100644
+--- a/gpu/command_buffer/client/raster_implementation.cc
++++ b/gpu/command_buffer/client/raster_implementation.cc
+@@ -217,6 +217,8 @@ class RasterImplementation::TransferCacheSerializeHelperImpl final
+     bool succeeded = entry.Serialize(
+         base::make_span(reinterpret_cast<uint8_t*>(memory), bytes_remaining));
+     DCHECK(succeeded);
++    ri_->helper_->SendBufferToWhist(CommandBufferType::TRANSFER_CACHE, memory, bytes_to_write);
++
+     ri_->transfer_cache_.AddTransferCacheEntry(
+         entry.UnsafeType(), entry.Id(), buffer->shm_id(),
+         buffer->offset() + memory_offset, bytes_to_write);
+@@ -808,6 +810,7 @@ void RasterImplementation::IssueCreateTransferCacheEntry(
+   helper_->CreateTransferCacheEntryINTERNAL(entry_type, entry_id, handle_shm_id,
+                                             handle_shm_offset, data_shm_id,
+                                             data_shm_offset, data_size);
++  helper_->SendCommandsToWhist();
+ }
+ 
+ void RasterImplementation::IssueDeleteTransferCacheEntry(GLuint entry_type,
+@@ -1188,9 +1191,16 @@ void RasterImplementation::UnmapRasterCHROMIUM(uint32_t raster_written_size,
+   }
+ 
+   if (raster_written_size != 0u) {
++    helper_->SendBufferToWhist(CommandBufferType::MEM, raster_mapped_buffer_->address(),
++                               raster_written_size);
++    if (font_mapped_buffer_) {
++      helper_->SendBufferToWhist(CommandBufferType::FONT, font_mapped_buffer_->address(),
++                                 font_shm_size);
++    }
+     helper_->RasterCHROMIUM(
+         raster_mapped_buffer_->shm_id(), raster_mapped_buffer_->offset(),
+         raster_written_size, font_shm_id, font_shm_offset, font_shm_size);
++    helper_->SendCommandsToWhist();
+   }
+ 
+   raster_mapped_buffer_ = absl::nullopt;
