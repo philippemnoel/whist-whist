@@ -32,6 +32,15 @@ embed_file(images/error_message_1000x100.png insufficient_bandwidth_1000x100)
 embed_file(images/error_message_1500x150.png insufficient_bandwidth_1500x150)
 list(APPEND WHIST_CLIENT_DEPENDS ${EMBED_FILE_LIST})
 
+# if using mimalloc, link the object file to override system malloc
+# according to mimalloc, it should be linked first (see static.c in mimalloc)
+if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    if (USE_MIMALLOC)
+        set(MIMALLOC_DIR_PATH "${CMAKE_BINARY_DIR}/lib/${arch}/mimalloc/${CMAKE_SYSTEM_NAME}")
+        list(PREPEND WHIST_CLIENT_DEPENDS ${MIMALLOC_DIR_PATH}/mimalloc.o)
+    endif()
+endif()
+
 if(CLIENT_SHARED_LIB)
   add_library(WhistClient SHARED
     ${WHIST_CLIENT_DEPENDS}

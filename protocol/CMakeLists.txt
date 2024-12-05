@@ -45,6 +45,12 @@ endif()
 option(SANITIZE "Enable sanitizer during build (address, thread, undefined)." OFF)
 option(CLIENT_SHARED_LIB "Build the client as a shared library" OFF)
 option(USE_CCACHE "Use ccache to speed up builds" OFF)
+option(USE_MIMALLOC "Link the client to mimalloc" ON)
+if(USE_MIMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    add_compile_definitions(USING_MLOCK=true)
+else()
+    add_compile_definitions(USING_MLOCK=false)
+endif()
 
 if(USE_CCACHE)
     set(CMAKE_C_COMPILER_LAUNCHER "ccache")
@@ -200,7 +206,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
             set(WSL "C:\\Windows\\System32\\wsl.exe")
             set(BASH "/bin/bash")
         else()
-            message(FATAL_ERROR "Neither Git Bash nor WSL Bash were found! For WSL bash, make sure to create a symlink from C:\\Windows\\SysWOW64\\wsl.exe to C:\\Windows\\System32\\wsl.exe if you are on a 32-bit CMake install.")
+            message(FATAL_ERROR "Neither Git Bash nor WSL Bash were found! For WSL bash, make sure to create a symlink from C:\\Windows\\SysWOW65\\wsl.exe to C:\\Windows\\System32\\wsl.exe if you are on a 32-bit CMake install.")
         endif()
     endif()
 else()
@@ -288,12 +294,12 @@ endif()
 
 set(SENTRY_DIR_PATH "${CMAKE_BINARY_DIR}/lib/${arch}/sentry/${CMAKE_SYSTEM_NAME}")
 find_library(LIB_SENTRY NAMES sentry PATHS "${SENTRY_DIR_PATH}"
-        NO_DEFAULT_PATH
-        NO_CMAKE_ENVIRONMENT_PATH
-        NO_CMAKE_PATH
-        NO_SYSTEM_ENVIRONMENT_PATH
-        NO_CMAKE_SYSTEM_PATH
-        NO_CMAKE_FIND_ROOT_PATH)
+    NO_DEFAULT_PATH
+    NO_CMAKE_ENVIRONMENT_PATH
+    NO_CMAKE_PATH
+    NO_SYSTEM_ENVIRONMENT_PATH
+    NO_CMAKE_SYSTEM_PATH
+    NO_CMAKE_FIND_ROOT_PATH)
 if(NOT LIB_SENTRY)
     message(FATAL_ERROR "Library Sentry was not found! ${SENTRY_DIR_PATH}")
 endif()

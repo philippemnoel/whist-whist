@@ -417,7 +417,12 @@ jobs:
 
   notify-slack:
     name: Notify Slack
-    needs: [build-and-publish-openssl, build-and-publish-sentry]
+    needs:
+      [
+        build-and-publish-openssl,
+        build-and-publish-sentry,
+        build-and-publish-whist-mimalloc,
+      ]
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && success()
     runs-on: ubuntu-20.04
     steps:
