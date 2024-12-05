@@ -10,15 +10,13 @@ import {
 } from "rxjs/operators"
 
 import { mandelboxSuccess } from "@app/worker/events/mandelbox"
-import { hostSuccess } from "@app/worker/events/host"
 import { io, Socket } from "socket.io-client"
 import { MandelboxInfo, HostInfo } from "@app/@types/payload"
 import { JQueryStyleEventEmitter } from "rxjs/internal/observable/fromEvent"
 
-const socket = hostSuccess.pipe(
-  withLatestFrom(mandelboxSuccess),
-  map(([host, mandelbox]: [HostInfo, MandelboxInfo]) =>
-    io(`http://${mandelbox.mandelboxIP}:${host.mandelboxPorts.port_32261}`, {
+const socket = mandelboxSuccess.pipe(
+  map(([mandelbox]: [MandelboxInfo]) =>
+    io(`http://${mandelbox.mandelboxIP}:${mandelbox.mandelboxPorts.port_32261}`, {
       reconnectionDelayMax: 500,
       transports: ["websocket"],
     })
@@ -52,6 +50,7 @@ const socketReconnectFailed = merge(socket, socketConnected).pipe(
     ).pipe(take(15), count())
   )
 )
+
 
 // I'm not sure why this fixes things but it does
 socket.subscribe()

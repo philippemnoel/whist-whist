@@ -1,0 +1,103 @@
+From 2452b6eb040b3ee4e5bb001e5aa5095f4e5adf2f Mon Sep 17 00:00:00 2001
+From: Suriya Kandaswamy <suriya@whist.com>
+Date: Tue, 6 Dec 2022 20:32:59 +0000
+Subject: [PATCH 6/6] Add option to set dark mode from extension
+
+---
+ extensions/browser/api/runtime/runtime_api.cc | 21 +++++++++++++++++++
+ extensions/browser/api/runtime/runtime_api.h  | 14 +++++++++++++
+ extensions/common/api/runtime.json            | 16 ++++++++++++++
+ 3 files changed, 51 insertions(+)
+
+diff --git a/extensions/browser/api/runtime/runtime_api.cc b/extensions/browser/api/runtime/runtime_api.cc
+index 58a94d5cebe49..1f796dba09b7f 100644
+--- a/extensions/browser/api/runtime/runtime_api.cc
++++ b/extensions/browser/api/runtime/runtime_api.cc
+@@ -41,6 +41,7 @@
+ #include "extensions/common/manifest_handlers/background_info.h"
+ #include "extensions/common/manifest_handlers/shared_module_info.h"
+ #include "storage/browser/file_system/isolated_context.h"
++#include "ui/native_theme/native_theme.h"
+ #include "url/gurl.h"
+ 
+ using content::BrowserContext;
+@@ -744,4 +745,24 @@ RuntimeGetPackageDirectoryEntryFunction::Run() {
+       OneArgument(base::Value::FromUniquePtrValue(std::move(dict))));
+ }
+ 
++ExtensionFunction::ResponseAction RuntimeSetDarkModeFunction::Run() {
++  std::unique_ptr<api::runtime::SetDarkMode::Params> params(
++      api::runtime::SetDarkMode::Params::Create(args()));
++  EXTENSION_FUNCTION_VALIDATE(params.get());
++
++  bool use_dark_mode = params->use_dark_mode;
++
++  ui::NativeTheme::GetInstanceForNativeUi()->set_use_dark_colors(use_dark_mode);
++  ui::NativeTheme::GetInstanceForWeb()->set_use_dark_colors(use_dark_mode);
++
++  auto scheme = use_dark_mode ? ui::NativeTheme::PreferredColorScheme::kDark : ui::NativeTheme::PreferredColorScheme::kLight;
++  ui::NativeTheme::GetInstanceForNativeUi()->set_preferred_color_scheme(scheme);
++  ui::NativeTheme::GetInstanceForWeb()->set_preferred_color_scheme(scheme);
++
++  ui::NativeTheme::GetInstanceForNativeUi()->NotifyOnNativeThemeUpdated();
++  ui::NativeTheme::GetInstanceForWeb()->NotifyOnNativeThemeUpdated();
++
++  return RespondNow(NoArguments());
++}
++
+ }  // namespace extensions
+diff --git a/extensions/browser/api/runtime/runtime_api.h b/extensions/browser/api/runtime/runtime_api.h
+index cd84a90efa3fd..b41724e1dc49b 100644
+--- a/extensions/browser/api/runtime/runtime_api.h
++++ b/extensions/browser/api/runtime/runtime_api.h
+@@ -321,6 +321,20 @@ class RuntimeGetPackageDirectoryEntryFunction : public ExtensionFunction {
+   ResponseAction Run() override;
+ };
+ 
++// Add dark mode setting to Runtime because we want a patch and so don't
++//     want to create any new files and I couldn't find a better place to put
++//     it.
++class RuntimeSetDarkModeFunction : public ExtensionFunction {
++ public:
++  DECLARE_EXTENSION_FUNCTION("runtime.setDarkMode", UNKNOWN)
++
++ protected:
++  ~RuntimeSetDarkModeFunction() override {}
++
++  // ExtensionFunction:
++  ResponseAction Run() override;
++};
++
+ }  // namespace extensions
+ 
+ #endif  // EXTENSIONS_BROWSER_API_RUNTIME_RUNTIME_API_H_
+diff --git a/extensions/common/api/runtime.json b/extensions/common/api/runtime.json
+index cb3ced530e4c4..4c5f0270854e2 100644
+--- a/extensions/common/api/runtime.json
++++ b/extensions/common/api/runtime.json
+@@ -428,6 +428,22 @@
+             ]
+           }
+         ]
++      },
++      {
++        "name": "setDarkMode",
++        "type": "function",
++        "description": "Sets the dark mode for the browser (under font settings to avoid creating new files that wouldn't generate patches).",
++        "parameters": [
++          {
++            "name": "useDarkMode",
++            "type": "boolean"
++          }
++        ],
++        "returns_async": {
++          "name": "callback",
++          "optional": true,
++          "parameters": []
++        }
+       }
+     ],
+     "events": [
+-- 
+2.25.1
+

@@ -39,30 +39,4 @@ echo "$!" > /usr/share/whist/whist-audio-pid
 # Detatch the watchdog
 disown
 
-### SET CLIENT SESSION ID ON SERVER LOGS ###
-# Note: Its necessary to this before the `whist-main.service` starts
-# because otherwise we won't be able to modify the logs path. This is
-# the earliest we can get the session id without blocking the other service's
-# startup and the only time we can modify the logs path of the `whist-main.service`.
-WHIST_MAPPINGS_DIR=/whist/resourceMappings/
-block-until-file-exists.sh $WHIST_MAPPINGS_DIR/session_id >&1
-
-# Get the session id from the file written by the host service
-SESSION_ID=$(cat $WHIST_MAPPINGS_DIR/session_id)
-
-# Create a directory with the session id where the service
-# logs will be sent to. We need this path structure so the
-# session id can be parsed by filebeat.
-mkdir "/var/log/whist/$SESSION_ID/"
-
-cat > /etc/systemd/system/whist-main.service.d/output.conf << EOF
-[Service]
-StandardOutput=file:/var/log/whist/$SESSION_ID/main-out.log
-StandardError=file:/var/log/whist/$SESSION_ID/main-err.log
-EOF
-
-echo "Set whist main service unit file to $SESSION_ID"
-
-systemctl daemon-reload
-
 # Exit, to tell systemd that all is well

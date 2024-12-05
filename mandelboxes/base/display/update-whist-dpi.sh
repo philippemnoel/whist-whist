@@ -19,19 +19,10 @@ esac
 # Exit on subcommand errors
 set -Eeuo pipefail
 
-# Obtain the initial DPI from the JSON transport file
-WHIST_JSON_FILE=/whist/resourceMappings/config.json
-INITIAL_DPI=192
-if [[ -f $WHIST_JSON_FILE ]]; then
-  if [ "$( jq 'has("client_dpi")' < $WHIST_JSON_FILE )" == "true"  ]; then
-    INITIAL_DPI="$(jq -rc '.client_dpi' < $WHIST_JSON_FILE)"
-  fi
-fi
-
-
-# Takes the DPI as an input, or the initial value passed by the JSON transport protocol.
+# Takes the DPI as an input or default value.
 # If that's not available, use 192 as the default. 96 is a reasonable default, but
-# Macbooks these days default to 192, so this is a hack until JSON transport is ready!
+# Macbooks these days default to 192.
+INITIAL_DPI=192
 WHIST_DPI=${1:-$INITIAL_DPI}
 WHIST_DPI_CACHE_FILE=/usr/share/whist/dpi.cache
 
@@ -50,7 +41,6 @@ Xft/Antialias 1
 Xft/Hinting 1
 Xft/HintStyle "hintslight"
 Xft/RGBA "rgb"
-Gtk/CursorThemeSize $((24*WHIST_DPI/96))
 EOF
 
 echo "$WHIST_DPI" > $WHIST_DPI_CACHE_FILE

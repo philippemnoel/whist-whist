@@ -36,11 +36,6 @@ import (
 	"syscall"
 	"time"
 
-	// We use this package instead of the standard library log so that we never
-	// forget to send a message via Sentry. For the same reason, we make sure not
-	// to import the fmt package either, instead separating required
-	// functionality in this imported package as well.
-
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-multierror"
 	"github.com/whisthq/whist/backend/services/httputils"
@@ -60,6 +55,7 @@ import (
 	dockerevents "github.com/docker/docker/api/types/events"
 	dockerfilters "github.com/docker/docker/api/types/filters"
 	dockerclient "github.com/docker/docker/client"
+	"github.com/whisthq/whist/backend/services/host-service/mandelbox/portbindings"
 )
 
 var shutdownInstanceOnExit bool = !metadata.IsLocalEnv()
@@ -129,31 +125,31 @@ func SpinUpMandelboxes(globalCtx context.Context, globalCancel context.CancelFun
 	for i := int32(0); i < instanceCapacity; i++ {
 		mandelboxID := mandelboxtypes.MandelboxID(uuid.New())
 		var appName mandelboxtypes.AppName = mandelboxtypes.AppName(utils.MandelboxApp)
-		zygote, err := StartMandelboxSpinUp(globalCtx, globalCancel, goroutineTracker, dockerClient, mandelboxID, appName, mandelboxDieChan)
+		mandelbox, err := SpinUpMandelbox(globalCtx, goroutineTracker, dockerClient, mandelboxID, appName, mandelboxDieChan, true, true, false)
 
-		// If we fail to create a zygote mandelbox, it indicates a problem with the instance, or the Docker
-		// images. Its not safe to assign users to it, so we cancel the global context and shut down the instance
-		if zygote == nil || err != nil {
+		// If we fail to create a mandelbox, it indicates a problem with the instance, or the Docker images
+		// Its not safe to assign users to it, so we cancel the global context and shut down the instance
+		if mandelbox == nil || err != nil {
 			globalCancel()
-			logger.Errorw(utils.Sprintf("failed to start waiting mandelbox: %s", err), []interface{}{
-				zap.String("mandelbox_id", zygote.GetID().String()),
-				zap.Time("updated_at", zygote.GetLastUpdatedTime()),
+			logger.Errorw(utils.Sprintf("failed to start mandelbox: %s", err), []interface{}{
+				zap.String("mandelbox_id", mandelbox.GetID().String()),
+				zap.Time("updated_at", mandelbox.GetLastUpdatedTime()),
 			})
 			return
 		}
 
 		// We have to parse the appname before writing to the database.
-		appString := strings.Split(string(zygote.GetAppName()), "/")
+		appString := strings.Split(string(mandelbox.GetAppName()), "/")
 		appNameForDb := strings.ToUpper(appString[1])
-		err = dbdriver.CreateMandelbox(zygote.GetID(), appNameForDb, instanceID)
+		err = dbdriver.CreateMandelbox(mandelbox.GetID(), appNameForDb, instanceID, string(mandelbox.GetSessionID()))
 		if err != nil {
-			logger.Errorf("failed to register mandelbox %v on database. Err: %v", zygote.GetID(), err)
+			logger.Errorf("failed to register mandelbox %s on database: %s", mandelbox.GetID(), err)
 		}
 	}
 }
 
 // Handle tasks to be completed when a mandelbox dies
-func mandelboxDieHandler(id string, transportRequestMap map[mandelboxtypes.MandelboxID]chan *httputils.JSONTransportRequest, transportMapLock *sync.Mutex, dockerClient dockerclient.CommonAPIClient) {
+func mandelboxDieHandler(id string, dockerClient dockerclient.CommonAPIClient) {
 	// Exit if we are not dealing with a Whist mandelbox, or if it has already
 	// been closed (via a call to Close() or a context cancellation).
 	mandelbox, err := mandelboxData.LookUpByDockerID(mandelboxtypes.DockerID(id))
@@ -161,12 +157,6 @@ func mandelboxDieHandler(id string, transportRequestMap map[mandelboxtypes.Mande
 		logger.Warningf("mandelboxDieHandler(): %s", err)
 		return
 	}
-
-	// Clean up this user from the JSON transport request map.
-	mandelboxID := mandelbox.GetID()
-	transportMapLock.Lock()
-	transportRequestMap[mandelboxID] = nil
-	transportMapLock.Unlock()
 
 	logger.Infof("Cancelling mandelbox context.")
 	mandelbox.Close()
@@ -603,13 +593,6 @@ func eventLoopGoroutine(globalCtx context.Context, globalCancel context.CancelFu
 		Filters: filters,
 	}
 
-	// We use this lock to protect the transportRequestMap
-	transportMapLock := &sync.Mutex{}
-
-	// Note: If a mandelbox suffers a bug, or fails to start correctly
-	// these channels will become a memory leak.
-	transportRequestMap := make(map[mandelboxtypes.MandelboxID]chan *httputils.JSONTransportRequest)
-
 	// In the following loop, this var determines whether to re-initialize the
 	// Docker event stream. This is necessary because the Docker event stream
 	// needs to be reopened after any error is sent over the error channel.
@@ -653,7 +636,7 @@ func eventLoopGoroutine(globalCtx context.Context, globalCancel context.CancelFu
 		case dockerevent := <-dockerevents:
 			logger.Infof("dockerevent: %s for %s %s\n", dockerevent.Action, dockerevent.Type, dockerevent.ID)
 			if dockerevent.Action == "die" {
-				mandelboxDieHandler(dockerevent.ID, transportRequestMap, transportMapLock, dockerClient)
+				mandelboxDieHandler(dockerevent.ID, dockerClient)
 			}
 		case <-mandelboxDieEvents:
 			monitorWaitingMandelboxes(globalCtx, globalCancel, goroutineTracker, dockerClient, mandelboxDieEvents)
@@ -663,92 +646,83 @@ func eventLoopGoroutine(globalCtx context.Context, globalCancel context.CancelFu
 		// in this package, and the low-level authentication, parsing, etc. of
 		// requests in `httpserver`.
 		case serverevent := <-httpServerEvents:
-			switch serverevent := serverevent.(type) {
+			switch serverEvent := serverevent.(type) {
 			// TODO: actually handle panics in these goroutines
-			case *httputils.JSONTransportRequest:
-				if !metadata.IsLocalEnvWithoutDB() {
-					// Handle JSON transport validation on a separate goroutine
-					go handleJSONTransportRequest(serverevent, transportRequestMap, transportMapLock)
-				} else {
-					// If running on a local environment, disable any pubsub logic. We have to create a subscription request
-					// that mocks the Hasura subscription event. Doing this avoids the need of setting up a Hasura server and
-					// postgres database on the development instance.
-					jsonReq := serverevent
 
-					userID := metadata.CloudMetadata.GetUserID()
-					instanceID := metadata.CloudMetadata.GetInstanceID()
+			case *httputils.MandelboxInfoRequest:
+				var (
+					mandelbox mandelboxData.Mandelbox
+					err       error
+				)
 
-					// Create a mandelbox object as would be received from a Hasura subscription.
-					mandelbox := subscriptions.Mandelbox{
-						InstanceID: string(instanceID),
-						ID:         jsonReq.MandelboxID,
-						SessionID:  utils.Sprintf("%v", time.Now().UnixMilli()),
-						UserID:     userID,
-					}
-					subscriptionEvent := subscriptions.MandelboxEvent{
-						Mandelboxes: []subscriptions.Mandelbox{mandelbox},
-					}
-					// mandelboxSubscription is the pubsub event received from Hasura.
-					mandelboxSubscription := subscriptionEvent.Mandelboxes[0]
+				if metadata.IsLocalEnvWithoutDB() {
+					mandelboxID := mandelboxtypes.MandelboxID(uuid.New())
+					var appName mandelboxtypes.AppName = mandelboxtypes.AppName(utils.MandelboxApp)
+					mandelbox, err = SpinUpMandelbox(globalCtx, goroutineTracker, dockerClient, mandelboxID, appName, mandelboxDieEvents, serverEvent.KioskMode, serverEvent.LoadExtension, serverEvent.LocalClient)
 
-					// Launch the JSON transport handler to be able to call getAppName and obtain appName and req, needed to spin up the mandelbox.
-					go handleJSONTransportRequest(serverevent, transportRequestMap, transportMapLock)
-					req, appName := getAppName(mandelboxSubscription, transportRequestMap, transportMapLock)
-
-					// For local development, we start and finish the mandelbox spin up back to back
-					zygote, err := StartMandelboxSpinUp(globalCtx, globalCancel, goroutineTracker, dockerClient, jsonReq.MandelboxID, appName, mandelboxDieEvents)
-					if err != nil {
-						logger.Errorw(utils.Sprintf("failed to start waiting mandelbox: %s", err), []interface{}{
-							zap.String("mandelbox_id", zygote.GetID().String()),
-							zap.Time("updated_at", zygote.GetLastUpdatedTime()),
+					// If we fail to create a mandelbox, it indicates a problem with the instance, or the Docker images
+					// Its not safe to assign users to it, so we cancel the global context and shut down the instance
+					if mandelbox == nil || err != nil {
+						logger.Errorw(utils.Sprintf("failed to start mandelbox: %s", err), []interface{}{
+							zap.String("mandelbox_id", mandelbox.GetID().String()),
+							zap.Time("updated_at", mandelbox.GetLastUpdatedTime()),
 						})
-						break
+						return
 					}
-
-					go func() {
-						err := FinishMandelboxSpinUp(globalCtx, globalCancel, goroutineTracker, dockerClient, mandelboxSubscription, transportRequestMap, transportMapLock, req)
-						if err != nil {
-							logger.Errorw(utils.Sprintf("failed to finish mandelbox startup: %s", err), []interface{}{
-								zap.String("instance_id", mandelboxSubscription.InstanceID),
-								zap.String("mandelbox_id", mandelboxSubscription.ID.String()),
-								zap.String("mandelbox_app", mandelboxSubscription.App),
-								zap.String("session_id", mandelboxSubscription.SessionID),
-								zap.String("user_id", string(mandelboxSubscription.UserID)),
-								zap.Time("created_at", mandelboxSubscription.CreatedAt),
-								zap.Time("updated_at", mandelboxSubscription.UpdatedAt),
-							})
-						}
-					}()
+				} else {
+					mandelbox, err = mandelboxData.LookUpByMandelboxID(serverEvent.MandelboxID)
+					if err != nil {
+						logger.Errorf("did not find mandelbox %s: %s", serverEvent.MandelboxID.String(), err)
+						serverEvent.ReturnResult(nil, err)
+						return
+					}
 				}
-			default:
-				if serverevent != nil {
-					err := utils.MakeError("unimplemented handling of server event [type: %T]: %v", serverevent, serverevent)
+
+				// Request port bindings for the mandelbox.
+				var (
+					hostPortForTCP32261, hostPortForTCP32262, hostPortForUDP32263, hostPortForTCP32273 uint16
+					err32261, err32262, err32263, err32273                                             error
+				)
+
+				hostPortForTCP32261, err32261 = mandelbox.GetHostPort(32261, portbindings.TransportProtocolTCP)
+				hostPortForTCP32262, err32262 = mandelbox.GetHostPort(32262, portbindings.TransportProtocolTCP)
+				hostPortForUDP32263, err32263 = mandelbox.GetHostPort(32263, portbindings.TransportProtocolUDP)
+				hostPortForTCP32273, err32273 = mandelbox.GetHostPort(32273, portbindings.TransportProtocolTCP)
+				if err32261 != nil || err32262 != nil || err32263 != nil || err32273 != nil {
+					logger.Errorf("couldn't get host ports: %s", err)
+					serverEvent.ReturnResult(nil, err)
+					return
+				}
+
+				// Since the frontend has requested the information for this specific mandelbox (via the scaling service)
+				// we set its status to running and write it to the database.
+				mandelbox.SetStatus(dbdriver.MandelboxStatusRunning)
+				err = dbdriver.WriteMandelboxStatus(mandelbox.GetID(), dbdriver.MandelboxStatusRunning)
+				if err != nil {
 					logger.Error(err)
-					serverevent.ReturnResult("", err)
+					serverEvent.ReturnResult(nil, err)
+					return
+
+				}
+
+				serverEvent.ReturnResult(httputils.MandelboxInfoRequestResult{
+					HostPortForTCP32261: hostPortForTCP32261,
+					HostPortForTCP32262: hostPortForTCP32262,
+					HostPortForUDP32263: hostPortForUDP32263,
+					HostPortForTCP32273: hostPortForTCP32273,
+					AesKey:              string(mandelbox.GetPrivateKey()),
+				}, nil)
+
+			default:
+				if serverEvent != nil {
+					err := utils.MakeError("unimplemented handling of server event [type: %T]: %v", serverEvent, serverEvent)
+					logger.Error(err)
+					serverEvent.ReturnResult("", err)
 				}
 			}
 
 		case subscriptionEvent := <-subscriptionEvents:
 			switch subscriptionEvent := subscriptionEvent.(type) {
-			case *subscriptions.MandelboxEvent:
-				mandelboxSubscription := subscriptionEvent.Mandelboxes[0]
-				req, _ := getAppName(mandelboxSubscription, transportRequestMap, transportMapLock)
-				go func() {
-					err := FinishMandelboxSpinUp(globalCtx, globalCancel, goroutineTracker, dockerClient,
-						mandelboxSubscription, transportRequestMap, transportMapLock, req)
-					if err != nil {
-						logger.Errorw(utils.Sprintf("failed to finish mandelbox startup: %s", err), []interface{}{
-							zap.String("instance_id", mandelboxSubscription.InstanceID),
-							zap.String("mandelbox_id", mandelboxSubscription.ID.String()),
-							zap.String("mandelbox_app", mandelboxSubscription.App),
-							zap.String("session_id", mandelboxSubscription.SessionID),
-							zap.String("user_id", string(mandelboxSubscription.UserID)),
-							zap.Time("created_at", mandelboxSubscription.CreatedAt),
-							zap.Time("updated_at", mandelboxSubscription.UpdatedAt),
-						})
-					}
-				}()
-
 			case *subscriptions.InstanceEvent:
 				if len(subscriptionEvent.Instances) == 0 {
 					break

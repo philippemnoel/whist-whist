@@ -7,9 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/google/uuid"
-	"github.com/whisthq/whist/backend/services/types"
 )
 
 func TestGetAccessToken(t *testing.T) {
@@ -61,23 +58,8 @@ func TestParseRequest(t *testing.T) {
 			CommitHash: "test_sha",
 			UserEmail:  "user@whist.com",
 			Version:    "1.0.0",
-			SessionID:  1234567890,
 		}},
 		{"Empty assign request", &MandelboxAssignRequest{}, `{}`, &MandelboxAssignRequest{}},
-		{"Valid JSON transport request", &JSONTransportRequest{}, `{
-			"ip": "0.0.0.0",
-			"app_name": "chrome",
-			"mandelbox_id": "e0aa0e21-3350-49b6-95a6-152dd2a13e3c",
-			"json_data": "test_json_data",
-			"browser_data": "test_browser_data"
-
-		}`, &JSONTransportRequest{
-			IP:          "0.0.0.0",
-			AppName:     "CHROME",
-			MandelboxID: types.MandelboxID(uuid.MustParse("e0aa0e21-3350-49b6-95a6-152dd2a13e3c")),
-			JSONData:    types.JSONData(`"location":"Americas/NewYork"`),
-		}},
-		{"Empty JSON transport request", &JSONTransportRequest{}, `{}`, &JSONTransportRequest{}},
 	}
 
 	for _, tt := range tests {

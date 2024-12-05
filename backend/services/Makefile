@@ -144,7 +144,7 @@ run_host_service: build
 # the host service can use the `ubuntu` account's aws credentials to run,
 # even though it runs as root.
 	sudo [ -e $(ROOT_HOMEDIR)/.aws ] || sudo ln -s -T "$(HOME)/.aws" "$(ROOT_HOMEDIR)/.aws"
-	sudo --preserve-env=PATH --preserve-env=LOCALDEV_PROTOCOL_TIMEOUT APP_ENV=localdev GPU=$(GPU) $(BUILD_FOLDER)/host-service
+	sudo --preserve-env=PATH --preserve-env=LOCALDEV_PROTOCOL_CONNECT_TIMEOUT --preserve-env=LOCALDEV_PROTOCOL_DISCONNECT_TIMEOUT APP_ENV=localdev GPU=$(GPU) $(BUILD_FOLDER)/host-service
 
 run_host_service_localdevwithdb: build
 	$(info running $(BUILD_FOLDER)/host-service with localdevwithdb configuration...)

@@ -54,7 +54,8 @@ struct _whist_server_config {
     char binary_aes_private_key[16];
     char hex_aes_private_key[33];
     char identifier[WHIST_IDENTIFIER_MAXLEN + 1];
-    int begin_time_to_exit;
+    int wait_time_to_exit;
+    int disconnect_time_to_exit;
 };
 
 typedef struct _whist_server_config whist_server_config;

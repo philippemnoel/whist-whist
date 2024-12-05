@@ -287,7 +287,7 @@ func (s *DefaultScalingAlgorithm) MandelboxAssign(scalingCtx context.Context, ev
 		App:        string(waitingMandelbox.App),
 		InstanceID: assignedInstance.ID,
 		UserID:     mandelboxRequest.UserID,
-		SessionID:  utils.Sprintf("%v", mandelboxRequest.SessionID),
+		SessionID:  waitingMandelbox.SessionID,
 		Status:     "ALLOCATED",
 		CreatedAt:  waitingMandelbox.CreatedAt,
 		UpdatedAt:  time.Now(),

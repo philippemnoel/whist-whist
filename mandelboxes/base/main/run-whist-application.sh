@@ -24,20 +24,9 @@ echo $$ > $WHIST_APPLICATION_PID_FILE
 # Wait for the PID file to have been removed
 block-while-file-exists.sh $WHIST_APPLICATION_PID_FILE >&1
 
-# Pass JSON transport settings as environment variables
-export DARK_MODE=$DARK_MODE
-export RESTORE_LAST_SESSION=$RESTORE_LAST_SESSION
-export LOAD_EXTENSION=$LOAD_EXTENSION
-export TZ=$TZ # TZ variable automatically adjusts the timezone (https://www.gnu.org/software/libc/manual/html_node/TZ-Variable.html)
-export INITIAL_URL=$INITIAL_URL
-export USER_AGENT=$USER_AGENT
-export KIOSK_MODE=$KIOSK_MODE
-export LONGITUDE=$LONGITUDE
-export LATITUDE=$LATITUDE
-# Set the locale (the line below exports all the locale environment variables)
-export ${USER_LOCALE?}
+# Set the client OS and system languages. For now, system languages will always be en_US until we can
+# implement restart-less system language changes.
 export LANGUAGE=$SYSTEM_LANGUAGES
-export BROWSER_LANGUAGES=$BROWSER_LANGUAGES
 export CLIENT_OS=$CLIENT_OS
 
 # Explicitly export the fonts path, so that the

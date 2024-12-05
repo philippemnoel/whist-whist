@@ -16,7 +16,6 @@ scaling service and host service.
 package main
 
 import (
-	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"io"
@@ -52,6 +51,14 @@ func mandelboxAssignHandler(w http.ResponseWriter, r *http.Request, events chan<
 		return
 	}
 
+	// Extract access token from request header
+	accessToken, err := httputils.GetAccessToken(r)
+	if err != nil {
+		logger.Error(err)
+		http.Error(w, "Did not receive an access token", http.StatusUnauthorized)
+		return
+	}
+
 	var reqdata httputils.MandelboxAssignRequest
 	claims, err := httputils.AuthenticateRequest(w, r, &reqdata)
 	if err != nil {
@@ -77,19 +84,28 @@ func mandelboxAssignHandler(w http.ResponseWriter, r *http.Request, events chan<
 	assignResult := res.Result.(httputils.MandelboxAssignRequestResult)
 
 	var (
-		buf    []byte
-		status int
+		buf           []byte
+		status        int
+		mandelboxInfo httputils.MandelboxInfoRequestResult
 	)
 
+	// Send a request to the host service running on the assigned instance to get the
+	// information of the mandelbox. If the response is successful, return the mandelbox
+	// ports and private key to the frontend as part of the assign request result.
 	if assignResult.Error != "" {
 		// Send a 503
 		status = http.StatusServiceUnavailable
 	} else {
-		// Send a 200 code
-		status = http.StatusOK
+		mandelboxInfo, err = getMandelboxInfo(assignResult.IP, assignResult.MandelboxID.String(), accessToken)
+		if err != nil {
+			logger.Errorf("failed to get mandelbox info from host service: %s", err)
+			status = http.StatusServiceUnavailable
+		} else {
+			status = http.StatusOK
+		}
 	}
 
-	buf, err = json.Marshal(assignResult)
+	buf, err = json.Marshal(mandelboxInfo)
 	w.WriteHeader(status)
 	if err != nil {
 		logger.Errorf("error marshalling a %d HTTP Response body: %s", status, err)
@@ -167,52 +183,23 @@ func paymentSessionHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(buf)
 }
 
-// processJSONTransportRequest processes an HTTP request to receive data
+// getMandelboxInfo processes an HTTP request to receive data
 // directly from the frontend.
-func processJSONTransportRequest(w http.ResponseWriter, r *http.Request) {
-	// Verify that it is an PUT request
-	if httputils.VerifyRequestType(w, r, http.MethodPut) != nil {
-		http.Error(w, "", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Extract access token from request header to pass to host service
-	accessToken, err := httputils.GetAccessToken(r)
-	if err != nil {
-		logger.Error(err)
-		http.Error(w, "Did not receive an access token", http.StatusUnauthorized)
-		return
-	}
-
-	// Verify authorization and unmarshal into the right object type
-	var reqdata httputils.JSONTransportRequest
-	if _, err := httputils.AuthenticateRequest(w, r, &reqdata); err != nil {
-		logger.Error(err)
-		return
-	}
+func getMandelboxInfo(ip string, mandelboxID string, accessToken string) (httputils.MandelboxInfoRequestResult, error) {
+	var mandelboxInfo httputils.MandelboxInfoRequestResult
 
 	// Send the request to the instance and then return the response
-	url := utils.Sprintf("https://%s:%v/json_transport", reqdata.IP, HostServicePort)
-
-	jsonBody, err := json.Marshal(reqdata)
-	if err != nil {
-		logger.Errorf("error marshalling body for host service: %s", err)
-		return
-	}
+	url := utils.Sprintf("https://%s:%v/mandelbox/%s", ip, HostServicePort, mandelboxID)
 
 	// Create a new request
-	bodyReader := bytes.NewReader(jsonBody)
-	hostReq, err := http.NewRequest("PUT", url, bodyReader)
+	hostReq, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		logger.Errorf("failed to create JSON transport request for host service: %s", err)
-		http.Error(w, "", http.StatusInternalServerError)
-		return
+		return mandelboxInfo, err
 	}
 
 	// Add necessary headers to host request
-	hostReq.Header.Add("content-type", "application/json")
+	hostReq.Header.Add("Content-Type", "application/json")
 	hostReq.Header.Add("Authorization", utils.Sprintf("Bearer %s", accessToken))
-	hostReq.Close = true
 
 	// Instanciate a new http client with a custom transport
 	tr := &http.Transport{
@@ -224,23 +211,28 @@ func processJSONTransportRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Now that request is fully assembled and the client is initialized, send the request
 	res, err := client.Do(hostReq)
-	defer hostReq.Body.Close()
-
 	if err != nil {
-		logger.Errorf("failed to send JSON transport request to instance: %s", err)
-		http.Error(w, "", http.StatusInternalServerError)
-		return
+		logger.Error(err)
+		return mandelboxInfo, err
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return mandelboxInfo, err
 	}
 
-	hostBody, err := io.ReadAll(res.Body)
+	// Unmarshal and parse the response to return a result object
+	var info struct {
+		Result httputils.MandelboxInfoRequestResult `json:"result"`
+	}
+	err = json.Unmarshal(body, &info)
 	if err != nil {
-		logger.Errorf("could not read host response body: %s", err)
-		http.Error(w, "", http.StatusInternalServerError)
-		return
+		return mandelboxInfo, err
 	}
 
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(hostBody)
+	mandelboxInfo = info.Result
+	return mandelboxInfo, nil
 }
 
 // throttleMiddleware will limit requests on the endpoint using the provided rate limiter.
@@ -327,14 +319,12 @@ func StartHTTPServer(events chan algos.ScalingEvent) {
 
 	// Create the final handlers, with the necessary middleware
 	assignHandler := throttleMiddleware(limiter, httputils.EnableCORS(createHandler(mandelboxAssignHandler)))
-	jsonTransportHandler := httputils.EnableCORS(processJSONTransportRequest)
 	paymentsHandler := httputils.EnableCORS(paymentSessionHandler)
 
 	// Create a custom HTTP Request Multiplexer
 	mux := http.NewServeMux()
 	mux.Handle("/", http.NotFoundHandler())
 	mux.Handle("/mandelbox/assign", http.HandlerFunc(assignHandler))
-	mux.Handle("/json_transport", http.HandlerFunc(jsonTransportHandler))
 	mux.Handle("/payment_portal_url", http.HandlerFunc(paymentsHandler))
 
 	// The PORT env var will be automatically set by Heroku.

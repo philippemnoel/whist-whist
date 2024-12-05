@@ -2,13 +2,11 @@ import { merge } from "rxjs"
 import { filter, take } from "rxjs/operators"
 
 import { authSuccess, authFailure } from "@app/worker/events/auth"
-import { hostError } from "@app/worker/events/host"
 import { mandelboxError } from "@app/worker/events/mandelbox"
 
 import { getStorage, setStorage } from "@app/worker/utils/storage"
 import { whistState } from "@app/worker/utils/state"
 import { mandelboxCreateErrorUnauthorized } from "@app/worker/utils/mandelbox"
-import { hostSpinUpUnauthorized } from "@app/worker/utils/host"
 import { getActiveTab, updateTabUrl } from "@app/worker/utils/tabs"
 
 import { PopupMessage, PopupMessageType } from "@app/@types/messaging"
@@ -55,7 +53,6 @@ merge(
   mandelboxError.pipe(
     filter((response) => mandelboxCreateErrorUnauthorized(response))
   ),
-  hostError.pipe(filter((response) => hostSpinUpUnauthorized(response)))
 ).subscribe(async () => {
   whistState.isLoggedIn = false
   ;(chrome as any).whist.broadcastWhistMessage(

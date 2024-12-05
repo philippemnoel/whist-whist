@@ -34,10 +34,17 @@ static const char* private_key_option;
 COMMAND_LINE_STRING_OPTION(private_key_option, 'k', "private-key", 32,
                            "Pass in the RSA Private Key as a hexadecimal string.")
 
-static int timeout_option = 60;
-COMMAND_LINE_INT_OPTION(timeout_option, 't', "timeout", -1, 3600,
-                        "Tell the server to give up after TIME seconds.  If TIME "
-                        "is -1, disable auto exit completely.  Default: 60.")
+static int connect_timeout_option = 60;
+COMMAND_LINE_INT_OPTION(connect_timeout_option, 't', "connect-timeout", -1, 3600,
+                        "Tell the server to give up on an initial connection "
+                        "after TIME seconds.  If TIME is -1, disable auto exit "
+                        "completely.  Default: 60.")
+
+static int disconnect_timeout_option = 60;
+COMMAND_LINE_INT_OPTION(disconnect_timeout_option, 'T', "disconnect-timeout", -1, 3600,
+                        "Tell the server to shut down after one successful connection "
+                        "after TIME seconds. If TIME is -1, disable auto exit completely. "
+                        "Default: 60.")
 
 static const char* identifier_option;
 COMMAND_LINE_STRING_OPTION(identifier_option, 'i', "identifier", WHIST_IDENTIFIER_MAXLEN,
@@ -57,7 +64,8 @@ int server_parse_args(whist_server_config* config, int argc, char* argv[]) {
         return -1;
     }
 
-    config->begin_time_to_exit = timeout_option;
+    config->wait_time_to_exit = connect_timeout_option;
+    config->disconnect_time_to_exit = disconnect_timeout_option;
 
     safe_strncpy(config->identifier, identifier_option, sizeof(config->identifier));
 

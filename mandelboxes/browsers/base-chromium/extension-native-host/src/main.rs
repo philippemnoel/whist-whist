@@ -6,6 +6,7 @@ use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
+use std::process::Command;
 use triggers::{trigger_path, write_trigger, write_trigger_sequential, Trigger};
 
 // If the extension hasn't tried updating yet, then tell the
@@ -23,24 +24,6 @@ fn check_for_updates() -> Result<(), String> {
             value: json!(needs_update),
         },
     )
-}
-
-fn send_startup_params() -> Result<(), String> {
-    let longitude = std::env::var("LONGITUDE").unwrap_or("".to_string());
-    let latitude = std::env::var("LATITUDE").unwrap_or("".to_string());
-    if !longitude.is_empty() && !latitude.is_empty() {
-        send_message(
-            std::io::stdout(),
-            &NativeHostMessage {
-                msg_type: NativeHostMessageType::Geolocation,
-                value: json!({
-                    "longitude": longitude,
-                    "latitude": latitude,
-                }),
-            },
-        )?;
-    };
-    Ok(())
 }
 
 fn send_keepalive_messages(keep_running: &AtomicBool) -> Result<(), String> {
@@ -92,9 +75,38 @@ fn handle_pointer_lock(msg: NativeHostMessage) -> Result<(), String> {
     Ok(())
 }
 
+fn handle_keyboard_repeat_rate_change(msg: NativeHostMessage) -> Result<(), String> {
+    let repeatDelay = msg.value["repeatDelay"].as_i64();
+    let repeatRate = msg.value["repeatRate"].as_i64();
+
+    if repeatDelay.is_none() || repeatRate.is_none() {
+        eprintln!("KeyboardRepeatRate message did not contain repeatDelay and repeatRate strings");
+        return Ok(());
+    }
+
+    let xset_cmd = Command::new("xset").args(
+        ["r", "rate", repeatDelay.unwrap().to_string().as_str(), repeatRate.unwrap().to_string().as_str(), 
+        "-display", ":10"]).spawn();
+    Ok(())
+}
+
+fn handle_timezone_change(msg: NativeHostMessage) -> Result<(), String> {
+    match msg.value.as_str() {
+        Some(timezone) => {
+            let set_timezone_cmd = Command::new("/usr/bin/sudo-set-timezone.sh")
+                .arg(timezone)
+                .spawn();
+        },
+        None => {
+            eprintln!("Timezone message did not contain timezone");
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), String> {
     check_for_updates()?;
-    send_startup_params()?;
 
     let keep_running = Arc::new(AtomicBool::new(true));
 
@@ -109,6 +121,8 @@ fn main() -> Result<(), String> {
                 NativeHostMessageType::NativeHostExit => break,
                 NativeHostMessageType::DownloadComplete => handle_download_complete(msg)?,
                 NativeHostMessageType::PointerLock => handle_pointer_lock(msg)?,
+                NativeHostMessageType::KeyboardRepeatRate => handle_keyboard_repeat_rate_change(msg)?,
+                NativeHostMessageType::Timezone => handle_timezone_change(msg)?,
                 _ => {}
             },
             Err(e) => eprintln!("{}", e),

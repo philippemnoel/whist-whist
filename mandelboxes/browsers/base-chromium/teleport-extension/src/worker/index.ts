@@ -8,6 +8,13 @@ import { initFileSyncHandler } from "./downloads"
 import { initNativeHostIpc, initNativeHostDisconnectHandler } from "./ipc"
 import { initCursorLockHandler } from "./cursor"
 import { initLocationHandler } from "./geolocation"
+import { initKeyboardRepeatRateHandler } from "./keyboard"
+import { initLanguageInitHandler, initLanguageChangeHandler } from "./language"
+import { 
+  initPreferencesInitHandler, 
+  initDarkModeChangeHandler,
+  initTimezoneChangeHandler,
+} from "./preferences"
 import {
   initTabState,
   initSocketioConnection,
@@ -38,8 +45,20 @@ initNativeHostDisconnectHandler(nativeHostPort)
 // Enables relative mouse mode
 initCursorLockHandler(nativeHostPort)
 
-// Receive geolocation from extension host
-initLocationHandler(nativeHostPort)
+// Send and receive geolocation actions
+initLocationHandler(socket)
+
+// Receive keyboard repeat rate changes
+initKeyboardRepeatRateHandler(socket, nativeHostPort)
+
+// Send and receive language actions
+initLanguageInitHandler(socket)
+initLanguageChangeHandler(socket)
+
+// Send and receive preferences actions
+initPreferencesInitHandler(socket)
+initDarkModeChangeHandler(socket)
+initTimezoneChangeHandler(socket, nativeHostPort)
 
 // Listen to the client for tab actions
 initActivateTabListener(socket)

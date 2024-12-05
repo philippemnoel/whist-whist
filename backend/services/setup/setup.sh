@@ -1,7 +1,38 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 # Setup local database and Hasura servers for local scaling service testing.
-# To run this script, the Heroku CLI must be installed and logged into your account.
+
+function usage() {
+  cat <<USAGE
+
+    Usage: $0 [--config]
+
+    Options:
+        --config:  Setup the configuration database for local testing and development. Useful for services that
+                   interact with the config db. Note that this requires login to a Heroku account.
+USAGE
+  exit 1
+}
+
+USE_CONFIG_DB=false
+
+for arg in "$@"; do
+  case $arg in
+    --config)
+      USE_CONFIG_DB=true
+      ;;
+    -h | --help)
+      usage
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+  shift
+done
 
 # add_database_hasura will add the database given by the arguments
 # to Hasura as a data source.
@@ -42,14 +73,13 @@ EOF
 # $1: Postgres connection string
 wait_database_ready() {
   cmds="\q"
-  while ! (docker run --rm --network=services_default -i postgres psql "$1" <<< $cmds) &> /dev/null
+  while ! (docker run --rm --network=setup_default -i postgres psql "$1" <<< $cmds) &> /dev/null
   do
     echo "Connection failed. Retrying in 2 seconds..."
     sleep 2
   done
 }
 
-set -Eeuo pipefail
 
 # Allow passing `--down` to spin down the docker-compose stack, instead of
 # having to cd into this directory and manually run the command.
@@ -71,10 +101,6 @@ DOCKER_CONFIG_PGSTRING="postgres://postgres:whistpass@postgres-config:5432/postg
 LOCAL_WHIST_URL="http://localhost:8080/v1/metadata"
 LOCAL_CONFIG_URL="http://localhost:8082/v1/metadata"
 
-# First pull the config schema because its not tracked in the codebase.
-echo "Pulling config database schema..."
-DEV_CONFIG_DATABASE=$(heroku config:get HEROKU_POSTGRESQL_MAROON_URL -a whist-dev-scaling-service)
-
 # Start Hasura and Postgres databases.
 docker-compose up -d
 
@@ -84,16 +110,16 @@ wait_database_ready "$LOCAL_CONFIG_PGSTRING" &
 wait
 
 echo "Setting up local databases..."
-docker run --rm postgres pg_dump --no-owner --no-privileges --schema-only "$DEV_CONFIG_DATABASE" > config_schema.sql
-docker run --rm --network=services_default -i postgres psql "$LOCAL_CONFIG_PGSTRING" < config_schema.sql
-docker run --rm --network=services_default -i postgres psql "$LOCAL_WHIST_PGSTRING" < ../database/schema.sql
+docker run --rm --network=setup_default -i postgres psql "$LOCAL_WHIST_PGSTRING" < ../../database/schema.sql
 
-echo "Adding databases to Hasura servers..."
-add_database_hasura "$LOCAL_WHIST_URL" "$DOCKER_WHIST_PGSTRING"
-add_database_hasura "$LOCAL_CONFIG_URL" "$DOCKER_CONFIG_PGSTRING"
-
-echo "Populating config database..."
-docker run --rm --network=services_default -i postgres psql "$LOCAL_CONFIG_PGSTRING" <<EOF
+if [[ $USE_CONFIG_DB == true ]]; then
+  # First pull the config schema because its not tracked in the codebase.
+  echo "Pulling config database schema..."
+  DEV_CONFIG_DATABASE=$(heroku config:get HEROKU_POSTGRESQL_MAROON_URL -a whist-dev-scaling-service)
+  docker run --rm postgres pg_dump --no-owner --no-privileges --schema-only "$DEV_CONFIG_DATABASE" > config_schema.sql
+  docker run --rm --network=setup_default -i postgres psql "$LOCAL_CONFIG_PGSTRING" < config_schema.sql
+  echo "Populating config database..."
+  docker run --rm --network=setup_default -i postgres psql "$LOCAL_CONFIG_PGSTRING" <<EOF
 \x
 INSERT INTO dev VALUES
     ('DESIRED_FREE_MANDELBOXES_US_EAST_1', '2'),
@@ -104,10 +130,15 @@ INSERT INTO desktop_app_version(id, major, minor, micro, dev_rc, staging_rc, dev
     VALUES
         (1, 3, 0, 0, 0, 0, 'dummy_commit_hash', 'dummy_commit_hash', 'dummy_commit_hash');
 EOF
+  echo "Cleaning up..."
+  rm config_schema.sql
+fi
+
+echo "Adding databases to Hasura servers..."
+add_database_hasura "$LOCAL_WHIST_URL" "$DOCKER_WHIST_PGSTRING"
+add_database_hasura "$LOCAL_CONFIG_URL" "$DOCKER_CONFIG_PGSTRING"
 
 echo ""
-echo "Cleaning up..."
-rm config_schema.sql
 
 green="\e[0;92m"
 reset="\e[0m"

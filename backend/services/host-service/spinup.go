@@ -21,9 +21,7 @@ import (
 	mandelboxData "github.com/whisthq/whist/backend/services/host-service/mandelbox"
 	"github.com/whisthq/whist/backend/services/host-service/mandelbox/portbindings"
 	"github.com/whisthq/whist/backend/services/host-service/metrics"
-	"github.com/whisthq/whist/backend/services/httputils"
 	"github.com/whisthq/whist/backend/services/metadata"
-	"github.com/whisthq/whist/backend/services/subscriptions"
 	mandelboxtypes "github.com/whisthq/whist/backend/services/types"
 	"github.com/whisthq/whist/backend/services/utils"
 	logger "github.com/whisthq/whist/backend/services/whistlogger"
@@ -31,10 +29,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// StartMandelboxSpinUp will create and start a mandelbox, doing all the steps that can be done without the user's config token.
-// Once the mandelbox is started, it effectively waits an infinite time until a user gets assigned to it and the remaining
-// steps can continue.
-func StartMandelboxSpinUp(globalCtx context.Context, globalCancel context.CancelFunc, goroutineTracker *sync.WaitGroup, dockerClient dockerclient.CommonAPIClient, mandelboxID mandelboxtypes.MandelboxID, appName mandelboxtypes.AppName, mandelboxDieChan chan bool) (mandelboxData.Mandelbox, error) {
+// SpinUpMandelbox will create and start a mandelbox. Once the mandelbox is started, it effectively waits an infinite time until a user gets assigned to it.
+func SpinUpMandelbox(globalCtx context.Context, goroutineTracker *sync.WaitGroup, dockerClient dockerclient.CommonAPIClient, mandelboxID mandelboxtypes.MandelboxID, appName mandelboxtypes.AppName, mandelboxDieChan chan bool, kioskMode bool, loadExtension bool, localClient bool) (mandelboxData.Mandelbox, error) {
 	incrementErrorRate := func() {
 		metrics.Increment("ErrorRate")
 	}
@@ -66,6 +62,7 @@ func StartMandelboxSpinUp(globalCtx context.Context, globalCancel context.Cancel
 	hash := sha1.New()
 	hash.Write(randBytes)
 	serverSessionID := utils.Sprintf("%x", hash.Sum(nil))
+	mandelbox.SetSessionID(mandelboxtypes.SessionID(serverSessionID))
 
 	// Do all startup tasks that can be done before Docker container creation in
 	// parallel, stopping at the first error encountered
@@ -163,6 +160,9 @@ func StartMandelboxSpinUp(globalCtx context.Context, globalCancel context.Cancel
 	envs := []string{
 		utils.Sprintf("WHIST_AES_KEY=%s", aesKey),
 		utils.Sprintf("SENTRY_ENV=%s", metadata.GetAppEnvironment()),
+		utils.Sprintf("KIOSK_MODE=%t", kioskMode),
+		utils.Sprintf("LOAD_EXTENSION=%t", loadExtension),
+		utils.Sprintf("LOCAL_CLIENT=%t", localClient),
 	}
 
 	// Add additional env variables if host is using GPU
@@ -277,30 +277,42 @@ func StartMandelboxSpinUp(globalCtx context.Context, globalCancel context.Cancel
 			return utils.MakeError("error writing mandelbox params: %s", err)
 		}
 
-		// Server protocol waits 30 seconds for a client connection. However, in
-		// localdev we default to an infinite timeout to enable easier testing.
-		// In localdev environments, we can override this using an environment
-		// variable.
+		// Server protocol waits forever for a client connection and waits for 30
+		// seconds for another connection after the first successful connection
+		// has been disconnected. However, in localdev we default to an infinite
+		// timeout to enable easier testing. In localdev environments, we can
+		// override this using an environment variable.
 		//
 		// Since the server protocol only starts after the user configs are loaded,
 		// zygote mandelboxes will wait forever until JSON transport. Once that occurs,
 		// the server timeout will exit correctly if a client disconnects or fails to
 		// connect.
-		protocolTimeout := 30
+		protocolConnectTimeout := -1
+		protocolDisconnectTimeout := 30
 		if metadata.IsLocalEnv() {
-			localDevTimeout := os.Getenv("LOCALDEV_PROTOCOL_TIMEOUT")
-			if localDevTimeout != "" {
-				protocolTimeout, err = strconv.Atoi(localDevTimeout)
+			localDevConnectTimeout := os.Getenv("LOCALDEV_PROTOCOL_CONNECT_TIMEOUT")
+			if localDevConnectTimeout != "" {
+				protocolConnectTimeout, err = strconv.Atoi(localDevConnectTimeout)
 				if err != nil {
-					logger.Warningf("SpinUpMandelbox(): Error parsing LOCALDEV_PROTOCOL_TIMEOUT envvar: %s", err)
+					logger.Warningf("SpinUpMandelbox(): Error parsing LOCALDEV_PROTOCOL_CONNECT_TIMEOUT envvar: %s", err)
 				}
 			} else {
-				protocolTimeout = -1
+				protocolConnectTimeout = -1
+			}
+
+			localDevDisconnectTimeout := os.Getenv("LOCALDEV_PROTOCOL_DISCONNECT_TIMEOUT")
+			if localDevDisconnectTimeout != "" {
+				protocolDisconnectTimeout, err = strconv.Atoi(localDevDisconnectTimeout)
+				if err != nil {
+					logger.Warningf("SpinUpMandelbox(): Error parsing LOCALDEV_PROTOCOL_DISCONNECT_TIMEOUT envvar: %s", err)
+				}
+			} else {
+				protocolDisconnectTimeout = -1
 			}
 		}
 
-		if err := mandelbox.WriteProtocolTimeout(protocolTimeout); err != nil {
-			return utils.MakeError("error writing protocol timeout: %s", err)
+		if err := mandelbox.WriteProtocolTimeouts(protocolConnectTimeout, protocolDisconnectTimeout); err != nil {
+			return utils.MakeError("error writing protocol timeouts: %s", err)
 		}
 
 		logger.Infow("SpinUpMandelbox(): Successfully wrote parameters for mandelbox", contextFields)
@@ -332,147 +344,23 @@ func StartMandelboxSpinUp(globalCtx context.Context, globalCancel context.Cancel
 		return mandelbox, err
 	}
 
+	logger.Info("SpinUpMandelbox(): Waiting for mandelbox whist-application to start up...")
+	err = utils.WaitForFileCreation(path.Join(utils.WhistDir, mandelbox.GetID().String(), "mandelboxResourceMappings"), "done_sleeping_until_X_clients", time.Second*20, nil)
+	if err != nil {
+		incrementErrorRate()
+		return mandelbox, utils.MakeError("error waiting for mandelbox whist-application to start: %s", err)
+	}
+
+	logger.Info("SpinUpMandelbox(): Finished waiting for mandelbox whist application to start up")
+
+	// Mark mandelbox creation as successful, preventing cleanup on function
+	// termination.
+	createFailed = false
+
 	// Mark mandelbox creation as successful, preventing cleanup on function
 	// termination.
 	createFailed = false
 	mandelbox.SetStatus(dbdriver.MandelboxStatusWaiting)
+
 	return mandelbox, nil
-}
-
-// FinishMandelboxSpinUp runs when a user gets assigned to a waiting mandelbox. This function does all the remaining steps in
-// the spinup process that require a config token.
-func FinishMandelboxSpinUp(globalCtx context.Context, globalCancel context.CancelFunc, goroutineTracker *sync.WaitGroup, dockerClient dockerclient.CommonAPIClient, mandelboxSubscription subscriptions.Mandelbox, transportRequestMap map[mandelboxtypes.MandelboxID]chan *httputils.JSONTransportRequest, transportMapLock *sync.Mutex, req *httputils.JSONTransportRequest) error {
-	incrementErrorRate := func() {
-		metrics.Increment("ErrorRate")
-	}
-
-	// Create a slice of the context information that will be passed to the logger.
-	contextFields := []zap.Field{
-		zap.String("instance_id", mandelboxSubscription.InstanceID),
-		zap.String("mandelbox_id", mandelboxSubscription.ID.String()),
-		zap.String("mandelbox_app", mandelboxSubscription.App),
-		zap.String("session_id", mandelboxSubscription.SessionID),
-		zap.String("user_id", string(mandelboxSubscription.UserID)),
-		zap.Time("created_at", mandelboxSubscription.CreatedAt),
-		zap.Time("updated_at", mandelboxSubscription.UpdatedAt),
-	}
-
-	// Make an interface{} slice for errors that get logged in this function.
-	contextFieldSlice := make([]interface{}, len(contextFields))
-	for i, v := range contextFields {
-		contextFieldSlice[i] = v
-	}
-
-	logger.FastInfo("SpinUpMandelbox(): spinup started", contextFields...)
-
-	// Then, verify that we are expecting this user to request a mandelbox.
-	err := dbdriver.VerifyAllocatedMandelbox(mandelboxSubscription.UserID, mandelboxSubscription.ID)
-	if err != nil {
-		incrementErrorRate()
-		return err
-	}
-
-	mandelbox, err := mandelboxData.LookUpByMandelboxID(mandelboxSubscription.ID)
-	if err != nil {
-		incrementErrorRate()
-		return utils.MakeError("did not find existing mandelbox with ID %s", mandelboxSubscription.ID)
-	}
-	mandelbox.SetStatus(dbdriver.MandelboxStatusAllocated)
-
-	// If the creation of the mandelbox fails, we want to clean up after it. We
-	// do this by setting `createFailed` to true until all steps are done, and
-	// closing the mandelbox's context on function exit if `createFailed` is
-	// still set to true.
-	var createFailed bool = true
-	defer func() {
-		if createFailed {
-			mandelbox.Close()
-		}
-	}()
-
-	mandelbox.AssignToUser(mandelboxSubscription.UserID)
-	logger.FastInfo("SpinUpMandelbox(): Successfully assigned mandelbox", contextFields...)
-
-	mandelbox.SetSessionID(mandelboxtypes.SessionID(mandelboxSubscription.SessionID))
-	err = mandelbox.WriteSessionID()
-	if err != nil {
-		logger.Errorw(utils.Sprintf("Failed to write session id file: %s", err), contextFieldSlice)
-	}
-
-	logger.FastInfo(utils.Sprintf("SpinUpMandelbox(): Successfully wrote client session id file with content %s", mandelbox.GetSessionID()), contextFields...)
-
-	// Request port bindings for the mandelbox.
-	var (
-		hostPortForTCP32261, hostPortForTCP32262, hostPortForUDP32263, hostPortForTCP32273 uint16
-		err32261, err32262, err32263, err32273                                             error
-	)
-	hostPortForTCP32261, err32261 = mandelbox.GetHostPort(32261, portbindings.TransportProtocolTCP)
-	hostPortForTCP32262, err32262 = mandelbox.GetHostPort(32262, portbindings.TransportProtocolTCP)
-	hostPortForUDP32263, err32263 = mandelbox.GetHostPort(32263, portbindings.TransportProtocolUDP)
-	hostPortForTCP32273, err32273 = mandelbox.GetHostPort(32273, portbindings.TransportProtocolTCP)
-	if err32261 != nil || err32262 != nil || err32263 != nil || err32273 != nil {
-		incrementErrorRate()
-		return utils.MakeError("couldn't return host port bindings")
-	}
-
-	if req == nil {
-		// Receive the JSON transport request from the client via the httpserver.
-		jsonChan := getJSONTransportRequestChannel(mandelboxSubscription.ID, transportRequestMap, transportMapLock)
-
-		// Set a timeout for the JSON transport request to prevent the mandelbox from waiting forever.
-		select {
-		case transportRequest := <-jsonChan:
-			req = transportRequest
-		case <-time.After(1 * time.Minute):
-			// Clean up the mandelbox if the time out limit is reached
-			return utils.MakeError("user failed to connect to mandelbox due to config token time out")
-		}
-	}
-	mandelbox.SetStatus(dbdriver.MandelboxStatusConnecting)
-
-	// While we wait for config decryption, write the config.json file with the
-	// data received from JSON transport.
-	err = mandelbox.WriteJSONData(req.JSONData)
-	if err != nil {
-		incrementErrorRate()
-		return utils.MakeError("error writing config.json file for protocol: %s", err)
-	}
-
-	// Don't wait for whist-application to start up in local environment. We do
-	// this because in local environments, we want to provide the developer a
-	// shell into the container immediately, not conditional on everything
-	// starting up properly.
-	if !metadata.IsLocalEnv() {
-		logger.FastInfo("SpinUpMandelbox(): Waiting for mandelbox whist-application to start up...", contextFields...)
-		err = utils.WaitForFileCreation(path.Join(utils.WhistDir, mandelboxSubscription.ID.String(), "mandelboxResourceMappings"), "done_sleeping_until_X_clients", time.Second*20, nil)
-		if err != nil {
-			incrementErrorRate()
-			return utils.MakeError("error waiting for mandelbox whist-application to start: %s", err)
-		}
-
-		logger.FastInfo("SpinUpMandelbox(): Finished waiting for mandelbox whist application to start up", contextFields...)
-	}
-
-	err = dbdriver.WriteMandelboxStatus(mandelboxSubscription.ID, dbdriver.MandelboxStatusRunning)
-	if err != nil {
-		incrementErrorRate()
-		return utils.MakeError("error marking mandelbox running: %s", err)
-	}
-	logger.FastInfo("SpinUpMandelbox(): Successfully marked mandelbox as running", contextFields...)
-
-	// Mark mandelbox creation as successful, preventing cleanup on function
-	// termination.
-	createFailed = false
-
-	result := httputils.JSONTransportRequestResult{
-		HostPortForTCP32261: hostPortForTCP32261,
-		HostPortForTCP32262: hostPortForTCP32262,
-		HostPortForUDP32263: hostPortForUDP32263,
-		HostPortForTCP32273: hostPortForTCP32273,
-		AesKey:              string(mandelbox.GetPrivateKey()),
-	}
-	req.ReturnResult(result, nil)
-	mandelbox.SetStatus(dbdriver.MandelboxStatusRunning)
-	logger.FastInfo("SpinUpMandelbox(): Finished starting up mandelbox", contextFields...)
-	return nil
 }

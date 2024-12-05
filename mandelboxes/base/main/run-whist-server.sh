@@ -18,40 +18,29 @@ esac
 # Exit on subcommand errors
 set -Eeuo pipefail
 
-# Wait for JSON transport to write the config.json file. Starting the server and application
-# before the JSON transport settings have been written can have weird side-effects.
-# TODO: remove once JSON transport is phased out.
-WHIST_MAPPINGS_DIR=/whist/resourceMappings/
-block-until-file-exists.sh $WHIST_MAPPINGS_DIR/config.json >&1
-
 # Set/Retrieve Mandelbox parameters
-WHIST_MAPPINGS_DIR=/whist/resourceMappings
+WHIST_MAPPINGS_DIR=/whist/resourceMappings/
 WHIST_LOGS_FOLDER=/var/log/whist
 IDENTIFIER_FILENAME=hostPort_for_my_32262_tcp
 PRIVATE_KEY_FILENAME=$WHIST_PRIVATE_DIR/aes_key
-TIMEOUT_FILENAME=$WHIST_MAPPINGS_DIR/timeout
-SESSION_ID_FILENAME=$WHIST_MAPPINGS_DIR/session_id
-WHIST_APPLICATION_PID_FILE=/home/whist/whist-application-pid
-WHIST_JSON_FILE=/whist/resourceMappings/config.json
+CONNECT_TIMEOUT_FILENAME=$WHIST_MAPPINGS_DIR/connect_timeout
+DISCONNECT_TIMEOUT_FILENAME=$WHIST_MAPPINGS_DIR/disconnect_timeout
 
-# Read and export the session id, if the file exists
-if [ -f "$SESSION_ID_FILENAME" ]; then
-  SESSION_ID=$(cat $SESSION_ID_FILENAME)
-  export SESSION_ID
-  WHIST_LOGS_FOLDER=$WHIST_LOGS_FOLDER/$SESSION_ID
-fi
+WHIST_APPLICATION_PID_FILE=/home/whist/whist-application-pid
+
 # To avoid interfering with Filebeat, the logs files should not contain hyphens in the name before the {-out, -err}.log suffix
 PROTOCOL_OUT_FILENAME=$WHIST_LOGS_FOLDER/protocol_server-out.log
 PROTOCOL_ERR_FILENAME=$WHIST_LOGS_FOLDER/protocol_server-err.log
 TELEPORT_OUT_FILENAME=$WHIST_LOGS_FOLDER/teleport_drag_drop-out.log
 TELEPORT_ERR_FILENAME=$WHIST_LOGS_FOLDER/teleport_drag_drop-err.log
 
-# Parse options from JSON transport file
+# TODO: set to development flag
+WHIST_PRIVATE_DIR=/usr/share/whist/private
+LOCAL_CLIENT_FILENAME=$WHIST_PRIVATE_DIR/local_client
 LOCAL_CLIENT=false # true if the frontend is being tested manually by a Whist engineer
-if [[ -f $WHIST_JSON_FILE ]]; then
-  if [ "$( jq -rc 'has("local_client")' < $WHIST_JSON_FILE )" == "true"  ]; then
-    LOCAL_CLIENT="$(jq -rc '.local_client' < $WHIST_JSON_FILE)"
-  fi
+# Send in LOAD_EXTENSION and KIOSK_MODE, if set
+if [ -f "$LOCAL_CLIENT_FILENAME" ]; then
+  LOCAL_CLIENT=$(cat $LOCAL_CLIENT_FILENAME)
 fi
 
 # Define a string-format identifier for this mandelbox
@@ -75,16 +64,18 @@ if [ -f "$SENTRY_ENV_FILENAME" ] && [ "$LOCAL_CLIENT" == "false" ]; then
   OPTIONS="$OPTIONS --environment=$SENTRY_ENV"
 fi
 
-# Send in timeout, if set
-if [ -f "$TIMEOUT_FILENAME" ]; then
-  TIMEOUT=$(cat $TIMEOUT_FILENAME)
-  export TIMEOUT
-  OPTIONS="$OPTIONS --timeout=$TIMEOUT"
+# Send in connection timeout, if set
+if [ -f "$CONNECT_TIMEOUT_FILENAME" ]; then
+  CONNECT_TIMEOUT=$(cat $CONNECT_TIMEOUT_FILENAME)
+  export CONNECT_TIMEOUT
+  OPTIONS="$OPTIONS --connect-timeout=$CONNECT_TIMEOUT"
 fi
 
-# Send in client session id, if set
-if [[ -n "${SESSION_ID+1}" ]]; then
-  OPTIONS="$OPTIONS --session-id=$SESSION_ID"
+# Send in disconnection timeout, if set
+if [ -f "$DISCONNECT_TIMEOUT_FILENAME" ]; then
+  DISCONNECT_TIMEOUT=$(cat $DISCONNECT_TIMEOUT_FILENAME)
+  export DISCONNECT_TIMEOUT
+  OPTIONS="$OPTIONS --disconnect-timeout=$DISCONNECT_TIMEOUT"
 fi
 
 # We use named pipe redirection for consistency with our WhistServer launch setup
@@ -101,7 +92,8 @@ function cleanup {
   sudo shutdown now
 }
 
-if [ "$TIMEOUT" != "-1" ]; then
+# TODO: this needs to be adjusted since we'll have -1 in prod too
+if [ "$CONNECT_TIMEOUT" != "-1" || "$DISCONNECT_TIMEOUT" != "-1" ]; then
   # Make sure `cleanup` gets called on script exit except when TIMEOUT is -1, which
   # only occurs during local development. This timeout-setting logic is controlled
   # by spinup.go in the host-service.

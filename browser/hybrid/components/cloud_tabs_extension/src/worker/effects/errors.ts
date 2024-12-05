@@ -1,5 +1,4 @@
 import { mandelboxError } from "@app/worker/events/mandelbox"
-import { hostError } from "@app/worker/events/host"
 import { authNetworkError } from "@app/worker/events/auth"
 
 import { whistState } from "@app/worker/utils/state"
@@ -12,7 +11,6 @@ import {
 
 import { AsyncReturnType } from "@app/@types/api"
 import { CloudTabError } from "@app/constants/errors"
-import { HostSpinUpResponse, hostSpinUpUnauthorized } from "../utils/host"
 
 const showPopup = (type: CloudTabError) => {
   whistState.waitingCloudTabs.forEach((tab) => {
@@ -24,14 +22,6 @@ const showPopup = (type: CloudTabError) => {
   })
   whistState.waitingCloudTabs = []
 }
-
-hostError.subscribe((response: HostSpinUpResponse) => {
-  if (hostSpinUpUnauthorized(response)) {
-    showPopup(CloudTabError.AUTH_ERROR)
-  } else {
-    showPopup(CloudTabError.HOST_ERROR)
-  }
-})
 
 authNetworkError.subscribe(() => {
   showPopup(CloudTabError.NETWORK_ERROR)
@@ -46,5 +36,7 @@ mandelboxError.subscribe(
     } else {
       showPopup(CloudTabError.NO_INSTANCE_ERROR)
     }
+    // TODO: need something to distinguish host errors:
+    // showPopup(CloudTabError.HOST_ERROR)
   }
 )

@@ -10,9 +10,7 @@ Type=exec
 Environment=DISPLAY=:10
 Environment=XAUTHORITY=/home/whist/.Xauthority
 ExecStart=/usr/share/whist/run-whist-server.sh
-# The paths below will be modified by run-pulseaudio.sh to include the session id
-# on the path, as following:
-# Standard{Output,Error}=file:/var/log/whist/<session_id>/main-{err,out}.log
+# Standard{Output,Error}=file:/var/log/whist/main-{err,out}.log
 StandardOutput=file:/var/log/whist/main-out.log
 StandardError=file:/var/log/whist/main-err.log
 

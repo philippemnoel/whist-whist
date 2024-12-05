@@ -40,8 +40,12 @@ func (mandelbox *mandelboxData) WriteMandelboxParams() error {
 	return nil
 }
 
-func (mandelbox *mandelboxData) WriteProtocolTimeout(seconds int) error {
-	return mandelbox.writeResourceMappingToFile("timeout", utils.Sprintf("%v", seconds))
+func (mandelbox *mandelboxData) WriteProtocolTimeouts(connectSeconds int, disconnectSeconds int) error {
+	err := mandelbox.writeResourceMappingToFile("connect_timeout", utils.Sprintf("%v", connectSeconds))
+	if err == nil {
+		err = mandelbox.writeResourceMappingToFile("disconnect_timeout", utils.Sprintf("%v", disconnectSeconds))
+	}
+	return err
 }
 
 // WriteSessionID writes the session id received from the client to a file,

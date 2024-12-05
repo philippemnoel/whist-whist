@@ -40,7 +40,11 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["js/userAgent.js", "js/geolocation.js"],
+      "resources": [
+        "js/userAgent.js",
+        "js/geolocation.js",
+        "js/language.js"
+      ],
       "matches": ["<all_urls>"]
     }
   ]

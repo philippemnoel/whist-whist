@@ -108,10 +108,10 @@ type Mandelbox interface {
 	// they are computed and written when the mandelbox is created.
 	WriteMandelboxParams() error
 
-	// WriteProtocolTimeout writes a file containing the protocol timeout (i.e.
+	// WriteProtocolTimeouts writes files containing the protocol timeouts (i.e.
 	// how long it will wait for a connection) to a directory accessible to only
 	// this mandelbox.
-	WriteProtocolTimeout(protocolTimeout int) error
+	WriteProtocolTimeouts(protocolConnectTimeout int, protocolDisconnectTimeout int) error
 
 	// MarkParamsReady indicates that processes are ready to be initialized.
 	MarkParamsReady() error

@@ -1,71 +1,102 @@
-const getGeolocation = () => {
-  const meta_longitude = document.documentElement.querySelector(
-    'meta[name="longitude"]'
-  ) as HTMLMetaElement
-  const meta_latitude = document.documentElement.querySelector(
-    'meta[name="latitude"]'
-  ) as HTMLMetaElement
+import {
+  ContentScriptMessage,
+  ContentScriptMessageType,
+} from "@app/constants/ipc"
 
-  const latitude = (meta_latitude?.content as unknown as string) ?? undefined
-  const longitude = (meta_longitude?.content as unknown as string) ?? undefined
-
-  if (latitude !== undefined && longitude !== undefined) {
-    const longitude = parseFloat(meta_longitude.content)
-    const latitude = parseFloat(meta_latitude.content)
-
-    return {
-      longitude,
-      latitude,
-    }
-  }
-  return undefined
+const getUniqueId = () => {
+  // This should always be an integer
+  return Date.now()
 }
 
-const spoofLocation = (
-  geolocation: {
-    longitude: number
-    latitude: number
-  },
-  successCallback: (position: GeolocationPosition) => void
+const setMetaGeolocationTagFinished = (metaGeolocationTag: HTMLMetaElement) => {
+  metaGeolocationTag.content = JSON.stringify({deleteTag: true})
+}
+
+const geolocationPositionFunction = (
+  functionName: string,
+  successCallback: PositionCallback,
+  errorCallback: PositionErrorCallback | null | undefined,
+  options: any
 ) => {
-  successCallback({
-    coords: {
-      accuracy: 15.0,
-      altitude: null,
-      altitudeAccuracy: null,
-      heading: null,
-      latitude: geolocation.latitude,
-      longitude: geolocation.longitude,
-      speed: null,
-    } as GeolocationCoordinates,
-    timestamp: Date.now(),
-  } as GeolocationPosition)
+  const uniqueId = getUniqueId()
+
+  const metaGeolocation = document.createElement("meta")
+  metaGeolocation.name = `${uniqueId}-geolocation`
+  metaGeolocation.content = JSON.stringify({
+    function: functionName,
+    options: options,
+  })
+
+  // Listen for changes to content of the meta tag to get response
+  const metaGeolocationObserver = new MutationObserver((mutationList, observer) => {
+    const metaTagContentJSON = JSON.parse(metaGeolocation.content)
+
+    // If contents say deleteTag, then remove observer and remove tag
+    if (metaTagContentJSON.deleteTag) {
+      observer.disconnect()
+      document.documentElement.removeChild(metaGeolocation)
+      return
+    }
+
+    if ('success' in metaTagContentJSON) {
+      if (metaTagContentJSON.success) {
+        // success true means geolocation request returned a GeolocationPosition
+        successCallback(metaTagContentJSON.response as GeolocationPosition)
+      } else if (!metaTagContentJSON.success && errorCallback) {
+        errorCallback(metaTagContentJSON.response as GeolocationPositionError)
+      }
+
+      // If a state of success has been determined, and the calling function was
+      // getCurrentPosition, then clear the observer
+
+      setMetaGeolocationTagFinished(metaGeolocation)
+    }
+  })
+  metaGeolocationObserver.observe(metaGeolocation, {
+    attributes: true,
+    attributeFilter: [ "content" ]
+  })
+
+  document.documentElement.appendChild(metaGeolocation)
+
+  return uniqueId
 }
 
 navigator.geolocation.getCurrentPosition = (
   successCallback,
-  _errorCallback,
-  _options
+  errorCallback,
+  options
 ) => {
-  let geolocation = getGeolocation() as
-    | undefined
-    | { longitude: number; latitude: number }
+  geolocationPositionFunction("getCurrentPosition", successCallback, errorCallback, options)
+}
 
-  if (geolocation === undefined) {
-    const observer = new MutationObserver((_mutations, obs) => {
-      geolocation = getGeolocation()
+navigator.geolocation.watchPosition = (
+  successCallback,
+  errorCallback,
+  options
+) => {
+  // Use the unique ID as the handler number for reference in `clearWatch`
+  const handlerId = geolocationPositionFunction("watchPosition", successCallback, errorCallback, options)
 
-      if (geolocation !== undefined) {
-        spoofLocation(geolocation, successCallback)
-        obs.disconnect()
-      }
-    })
+  return handlerId
+}
 
-    observer.observe(document, {
-      childList: true,
-      subtree: true,
-    })
-  } else {
-    spoofLocation(geolocation, successCallback)
+navigator.geolocation.clearWatch = (id) => {
+  const metaGeolocationTag = document.documentElement.querySelector(
+    `meta[name="${id}-geolocation"]`
+  ) as HTMLMetaElement
+
+  if (metaGeolocationTag) {
+    setMetaGeolocationTagFinished(metaGeolocationTag)
   }
+
+  // Need to send message to extension since we're not creating
+  // a new meta tag and so the content script won't catch this
+  chrome.runtime.sendMessage(<ContentScriptMessage>{
+    type: ContentScriptMessageType.GEOLOCATION_REQUEST,
+    value: {
+      params: {function: "clearWatch"},
+      metaTagName: metaGeolocationTag.name
+    },
+  })
 }

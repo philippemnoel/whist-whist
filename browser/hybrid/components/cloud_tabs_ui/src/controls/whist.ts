@@ -127,8 +127,6 @@ export {
   GPUCommandStreaming,
   initializeWhistTagHandler,
   initializeRequestMandelbox,
-  // initializeWhistFreezeHandler,
-  // initializeWhistThawHandler,
   initializeWhistFreezeAllHandler,
   initializeWhistSpotlightHandler,
 }

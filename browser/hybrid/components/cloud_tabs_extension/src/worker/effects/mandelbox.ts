@@ -7,7 +7,6 @@ import {
   mandelboxSuccess,
 } from "@app/worker/events/mandelbox"
 import { webUiMandelboxNeeded } from "@app/worker/events/webui"
-import { hostSuccess, hostError } from "@app/worker/events/host"
 import { socket, socketReconnectFailed } from "@app/worker/events/socketio"
 
 import { serializeProtocolArgs } from "@app/worker/utils/protocol"
@@ -28,23 +27,21 @@ merge(mandelboxNeeded, socketReconnectFailed)
     socket.close()
   })
 
-hostSuccess
-  .pipe(withLatestFrom(mandelboxSuccess))
-  .subscribe(([host, mandelbox]: [HostInfo, MandelboxInfo]) => {
-    const s = serializeProtocolArgs({ ...mandelbox, ...host })
+mandelboxSuccess
+  .subscribe(([mandelbox]: [MandelboxInfo]) => {
     ;(chrome as any).whist.broadcastWhistMessage(
       JSON.stringify({
         type: "MANDELBOX_INFO",
         value: {
-          "server-ip": s.mandelboxIP,
-          p: s.mandelboxPorts,
-          k: s.mandelboxSecret,
+          "server-ip": mandelbox.mandelboxIP,
+          p: mandelbox.mandelboxPorts,
+          k: mandelbox.mandelboxSecret,
         },
       })
     )
 
     whistState.mandelboxState = MandelboxState.MANDELBOX_CONNECTED
-    whistState.mandelboxInfo = { ...mandelbox, ...host }
+    whistState.mandelboxInfo = mandelbox
   })
 
 webUiMandelboxNeeded.subscribe(() => {
@@ -54,7 +51,7 @@ webUiMandelboxNeeded.subscribe(() => {
   whistState.mandelboxInfo = undefined
 })
 
-merge(mandelboxError, hostError, socketReconnectFailed).subscribe(() => {
+merge(mandelboxError, socketReconnectFailed).subscribe(() => {
   whistState.mandelboxState = MandelboxState.MANDELBOX_NONEXISTENT
   whistState.mandelboxInfo = undefined
 })

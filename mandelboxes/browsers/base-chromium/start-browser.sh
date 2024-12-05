@@ -72,9 +72,6 @@ function commit_preferences_jq() {
   mv "$PREFERENCES.new" "$PREFERENCES"
 }
 
-# Set the browser language
-add_preferences_jq '.intl |= . + {"accept_languages": "'"${BROWSER_LANGUAGES}"'", "selected_languages": "'"${BROWSER_LANGUAGES}"'"}'
-
 # Notes on Chromium flags:
 #
 # The following flags are currently unsupported on Linux, but desirable. Once they are
@@ -126,23 +123,12 @@ flags=(
   "--password-store=basic" # This disables the kwalletd backend, which we don't support
 )
 
-if [[ "$DARK_MODE" == true ]]; then
-  features="$features,WebUIDarkMode"
-  flags+=("--force-dark-mode")
-fi
-
-if [[ "$RESTORE_LAST_SESSION" == true ]]; then
-  flags+=("--restore-last-session")
-fi
+features="$features,WebUIDarkMode"
+flags+=("--force-dark-mode")
 
 flags+=("--enable-features=$features")
 flags+=("--disable-features=$antifeatures")
 flags+=("--flag-switches-end")
-
-# Pass user agent corresponding to user's OS from JSON-transport
-if [[ -n "$USER_AGENT" ]]; then
-  flags+=("--user-agent=$USER_AGENT")
-fi
 
 # Start the server-side extension if the client requests it
 if [[ "$LOAD_EXTENSION" == true ]]; then
@@ -169,11 +155,6 @@ if [ "$ENABLE_GPU_COMMAND_STREAMING" == 1 ]; then
   flags+=("--no-sandbox")
   flags+=("--enable-gpu-command-streaming")
 fi
-
-# Passing the initial url from JSON transport as a parameter to the browser launch command. If the url is not
-# empty, the browser will open the url as an additional tab at start time. The other tabs will be restored depending
-# on the user settings.
-flags+=("$INITIAL_URL")
 
 # OS-specific provisions
 # If no CLIENT_OS is passed (i.e. we're testing locally), assume macOS

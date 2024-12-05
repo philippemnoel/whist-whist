@@ -8,8 +8,8 @@ import {
   socketConnected,
   socketDisconnected,
 } from "@app/worker/events/socketio"
-import { serverCookiesSynced } from "@app/worker/events/cookies"
-import { tabRemoved, tabUpdated, tabZoomed } from "@app/worker/events/tabs"
+import { initSettingsSent } from "@app/worker/events/settings"
+import { cloudTabCreated, cloudTabUpdated, tabRemoved, tabUpdated, tabZoomed } from "@app/worker/events/tabs"
 import {
   webUiNavigate,
   webUiRefresh,
@@ -29,12 +29,13 @@ import { Storage } from "@app/constants/storage"
 import { PopupMessage, PopupMessageType } from "@app/@types/messaging"
 
 merge(
-  serverCookiesSynced,
+  // Don't start creating cloud tabs until the init settings have been sent
+  initSettingsSent,
   stateDidChange("waitingCloudTabs").pipe(
     withLatestFrom(socket),
     filter(
       ([change, socket]) =>
-        change?.applyData?.name === "push" && socket.connected
+        change?.applyData?.name === "push" && socket.connected && whistState.sentInitSettings
     )
   )
 )
@@ -101,6 +102,19 @@ tabUpdated
     }
   })
 
+merge(cloudTabCreated, cloudTabUpdated)
+  .pipe(withLatestFrom(socket))
+  .subscribe(([tab, socket]: [chrome.tabs.Tab, Socket]) => {
+    // Keep passing the timezone every time a tab is activated or updated
+    // as a makeshift way to continuously update the timezone. This is
+    // because sometimes the timezone is not set on socket connection,
+    // which is where we send the first timezone-changed message.
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    // If setting to the same timezone as before, the browser does not react unless we set to something different first.
+    socket.emit("timezone-changed", "Etc/UTC")
+    socket.emit("timezone-changed", timezone)
+  })
+
 tabZoomed
   .pipe(withLatestFrom(socket))
   .subscribe(([zoomChangeInfo, socket]: [object, Socket]) => {
@@ -128,7 +142,7 @@ socketDisconnected.subscribe((socket: Socket) => {
   )
 })
 
-socketConnected.subscribe(() => {
+socketConnected.subscribe((socket: Socket) => {
   ;(chrome as any).whist.broadcastWhistMessage(
     JSON.stringify({
       type: "SOCKET_CONNECTED",

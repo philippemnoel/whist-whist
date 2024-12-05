@@ -38,6 +38,20 @@ fi
 # leak in any way (probably redundant, but still good practice)
 unset WHIST_AES_KEY
 
+# Set dev env vars
+if [ -n "${KIOSK_MODE+1}" ]
+then
+  echo "$KIOSK_MODE" > $WHIST_PRIVATE_DIR/kiosk_mode
+fi
+if [ -n "${LOAD_EXTENSION+1}" ]
+then
+  echo "$LOAD_EXTENSION" > $WHIST_PRIVATE_DIR/load_extension
+fi
+if [ -n "${LOCAL_CLIENT+1}" ]
+then
+  echo "$LOCAL_CLIENT" > $WHIST_PRIVATE_DIR/local_client
+fi
+
 # Remove a vestigal file that we do not use.
 # This is how LXC used to read environment variables: see that deprecated code in
 # https://github.com/moby/moby/blob/v1.9.1/daemon/execdriver/lxc/init.go#L107-L134

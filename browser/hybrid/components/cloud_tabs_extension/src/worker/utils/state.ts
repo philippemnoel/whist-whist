@@ -12,6 +12,7 @@ interface WhistState {
   mandelboxState: MandelboxState
   mandelboxInfo: (HostInfo & MandelboxInfo) | undefined
   alreadyAddedCookies: chrome.cookies.Cookie[]
+  sentInitSettings: boolean
 }
 
 interface WhistStateChange {
@@ -31,6 +32,7 @@ const _whistState: WhistState = {
   mandelboxState: MandelboxState.MANDELBOX_NONEXISTENT,
   mandelboxInfo: undefined,
   alreadyAddedCookies: [],
+  sentInitSettings: false,
 }
 
 const _stateDidChange = new ReplaySubject<WhistStateChange>()

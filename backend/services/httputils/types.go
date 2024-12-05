@@ -6,20 +6,19 @@ import (
 
 // Request types
 
-// JSONTransportRequest defines the (unauthenticated) `json_transport`
+// MandelboxInfoRequest defines the (unauthenticated) `json_transport`
 // endpoint.
-type JSONTransportRequest struct {
-	IP             string                     `json:"ip"`                 // The public IPv4 address of the instance running the mandelbox
-	AppName        mandelboxtypes.AppName     `json:"app_name,omitempty"` // The app name to spin up (used when running in localdev, but in deployment the app name is set to `utils.MandelboxApp`).
-	JwtAccessToken string                     `json:"jwt_access_token"`   // User's JWT access token
-	MandelboxID    mandelboxtypes.MandelboxID `json:"mandelbox_id"`       // MandelboxID, used for the json transport request map
-	JSONData       mandelboxtypes.JSONData    `json:"json_data"`          // Arbitrary stringified JSON data to pass to mandelbox
-	ResultChan     chan RequestResult         `json:"-"`                  // Channel to pass the request result between goroutines
+type MandelboxInfoRequest struct {
+	MandelboxID   mandelboxtypes.MandelboxID // MandelboxID, used for the json transport request map
+	KioskMode     bool                       // Enable or disable kiosk mode in chromium
+	LoadExtension bool                       // If the Whist extension should be loaded
+	LocalClient   bool                       // Indicates if the request comes from a local client
+	ResultChan    chan RequestResult         // Channel to pass the request result between goroutines
 }
 
-// JSONTransportRequestResult defines the data returned by the
+// MandelboxInfoRequestResult defines the data returned by the
 // `json_transport` endpoint.
-type JSONTransportRequestResult struct {
+type MandelboxInfoRequestResult struct {
 	HostPortForTCP32261 uint16 `json:"port_32261"`
 	HostPortForTCP32262 uint16 `json:"port_32262"`
 	HostPortForUDP32263 uint16 `json:"port_32263"`
@@ -29,7 +28,7 @@ type JSONTransportRequestResult struct {
 
 // ReturnResult is called to pass the result of a request back to the HTTP
 // request handler.
-func (s *JSONTransportRequest) ReturnResult(result interface{}, err error) {
+func (s *MandelboxInfoRequest) ReturnResult(result interface{}, err error) {
 	s.ResultChan <- RequestResult{
 		Result: result,
 		Err:    err,
@@ -38,7 +37,7 @@ func (s *JSONTransportRequest) ReturnResult(result interface{}, err error) {
 
 // createResultChan is called to create the Go channel to pass the request
 // result back to the HTTP request handler via ReturnResult.
-func (s *JSONTransportRequest) CreateResultChan() {
+func (s *MandelboxInfoRequest) CreateResultChan() {
 	if s.ResultChan == nil {
 		s.ResultChan = make(chan RequestResult)
 	}
@@ -50,7 +49,6 @@ type MandelboxAssignRequest struct {
 	CommitHash string   `json:"client_commit_hash"`
 	UserEmail  string   `json:"user_email"`
 	Version    string   `json:"version"`
-	SessionID  int64    `json:"session_id"`
 	// The userID is obtained from the access token, but when testing it can be sent in the request
 	UserID mandelboxtypes.UserID `json:"user_id"`
 	// Channel to pass the request result between goroutines

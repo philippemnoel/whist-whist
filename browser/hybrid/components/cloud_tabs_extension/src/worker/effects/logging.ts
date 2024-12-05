@@ -9,7 +9,6 @@ import {
   mandelboxError,
   mandelboxSuccess,
 } from "@app/worker/events/mandelbox"
-import { hostSuccess, hostError } from "@app/worker/events/host"
 import { tabActivated, tabCreated, tabFocused } from "@app/worker/events/tabs"
 import {
   socketConnected,
@@ -54,17 +53,9 @@ mandelboxSuccess.subscribe((x: any) => {
   console.log("Mandelbox successfully assigned", x)
 })
 
-hostSuccess.subscribe((x: any) => {
-  console.log("Host service successful", x)
-  track("Used cloud tab")
-})
-
+// TODO: be more specific about where the error is coming from, because it could be from the host service
 mandelboxError.subscribe((x: any) => {
   console.log("Mandelbox assign error", x)
-})
-
-hostError.subscribe((x: any) => {
-  console.log("Host service error", x)
 })
 
 socketConnected.subscribe(() => {

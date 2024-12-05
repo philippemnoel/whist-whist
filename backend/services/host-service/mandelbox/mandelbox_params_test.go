@@ -36,9 +36,9 @@ func TestWriteMandelboxParams(t *testing.T) {
 		t.Fatalf("Error writing mandelbox params: %v", err)
 	}
 
-	err = mandelbox.WriteProtocolTimeout(1)
+	err = mandelbox.WriteProtocolTimeouts(1, 1)
 	if err != nil {
-		t.Fatalf("Error writing protocol timeout: %v", err)
+		t.Fatalf("Error writing protocol timeouts: %v", err)
 	}
 
 	err = mandelbox.WriteSessionID()
@@ -125,7 +125,7 @@ func TestWriteMandelboxParamsErrors(t *testing.T) {
 		}
 	}
 
-	err = mandelbox.WriteProtocolTimeout(1)
+	err = mandelbox.WriteProtocolTimeouts(1, 1)
 	if err == nil {
 		t.Fatalf("Did not get an error when writing protocol timeout to file with name identical to a folder: %v", err)
 	}

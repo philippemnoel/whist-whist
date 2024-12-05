@@ -8,6 +8,7 @@ import { initCursorLockDetection } from "./cursor"
 import { initUserAgentSpoofer } from "./userAgent"
 import { initPinchToZoom } from "./zoom"
 import { initLocationSpoofer } from "./geolocation"
+import { initLanguageSpoofer } from "./language"
 
 // Enable relative mouse mode
 initCursorLockDetection()
@@ -20,3 +21,6 @@ initPinchToZoom()
 
 // Enable location spoofing
 initLocationSpoofer()
+
+// Enable language spoofing
+initLanguageSpoofer()

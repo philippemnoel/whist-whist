@@ -37,11 +37,6 @@ parser.add_argument(
     default="whisthq/base:current-build",
 )
 parser.add_argument(
-    "--json-data",
-    help="Json string to pass through json transport.",
-    default="",
-)
-parser.add_argument(
     "--host-address",
     help="IP address of the host service to send the request. Defaults to '127.0.0.1'.",
     default="127.0.0.1",
@@ -60,6 +55,21 @@ parser.add_argument(
         "certificate '/whist/cert.pem'. By default, this flag is disabled."
     ),
 )
+parser.add_argument(
+    "--no-kiosk",
+    action="store_true",
+    help="This flag launches browser apps in non-kiosk mode.",
+)
+parser.add_argument(
+    "--no-extension",
+    action="store_true",
+    help="This flag launches browser apps without the extension.",
+)
+parser.add_argument(
+    "--local-client",
+    action="store_true",
+    help="This flag indicates the frontend is being tested manually.",
+)
 args = parser.parse_args()
 
 
@@ -72,7 +82,6 @@ mandelbox_server_path = os.path.abspath("/usr/share/whist")
 PortBindings = namedtuple(
     "PortBindings", ["host_port_32262tcp", "host_port_32263udp", "host_port_32273tcp"]
 )
-json_data = args.json_data
 
 
 def ensure_root_privileges():
@@ -128,16 +137,24 @@ def send_spin_up_mandelbox_request(mandelbox_id):
 
     Args: mandelbox_id: the id of the mandelbox to create
     """
-    print("Sending SpinUpMandelbox request to host service!")
-    url = HOST_SERVICE_URL + "json_transport"
-    payload = {
-        "app_name": args.image,
-        "jwt_access_token": "bogus_jwt",
-        "json_data": json_data,
-        "mandelbox_id": str(mandelbox_id),
+    print("Sending GetMandelbox request to host service!")
+    url = HOST_SERVICE_URL + "mandelbox" + "/" + str(mandelbox_id)
+    development_args = {
+        "kiosk_mode": not args.no_kiosk,
+        "load_extension": not args.no_extension,
+        "local_client": args.local_client,
     }
     tls_verification = False if args.no_verify_tls else HOST_SERVICE_CERT_PATH
-    respobj = requests.put(url=url, json=payload, verify=tls_verification, timeout=10)
+
+    try:
+        respobj = requests.get(
+            url=url, params=development_args, verify=tls_verification, timeout=10
+        )
+        respobj.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"host service returned error: {e}")
+        return
+
     response = respobj.json()
     print(f"Response from host service: {response}")
     respobj.raise_for_status()

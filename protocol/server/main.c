@@ -507,9 +507,9 @@ int main(int argc, char* argv[]) {
 
         // If the client isn't active, activate the client
         if (!server_state.client->is_active) {
-            // If begin_time_to_exit seconds pass, and no connection has succeeded,
-            if (config.begin_time_to_exit != -1 &&
-                get_timer(&connection_attempt_timer) > config.begin_time_to_exit) {
+            // If wait_time_to_exit seconds pass, and no connection has succeeded,
+            if (config.wait_time_to_exit != -1 &&
+                get_timer(&connection_attempt_timer) > config.wait_time_to_exit) {
                 // Just exit
                 server_state.exiting = true;
                 break;
@@ -519,6 +519,9 @@ int main(int argc, char* argv[]) {
                 // Mark the client as activated
                 activate_client(server_state.client);
                 client_connected_once = true;
+                // After a successful connection, update the wait time to exit
+                // to the disconnect timeout.
+                config.wait_time_to_exit = config.disconnect_time_to_exit;
             } else {
                 LOG_INFO("No client found.");
             }

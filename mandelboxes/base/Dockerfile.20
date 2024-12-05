@@ -509,6 +509,9 @@ COPY main/dbus-session-local.conf $HYDRAULIC_ROOT/etc/dbus-1/session-local.conf
 # Script to launch `whist-application` as the `whist` user
 COPY --chmod=555 main/run-whist-application.sh $HYDRAULIC_ROOT/usr/bin/run-whist-application.sh
 
+COPY --chmod=555 utils/set-timezone.sh $HYDRAULIC_ROOT/usr/bin/set-timezone.sh
+COPY --chmod=555 utils/sudo-set-timezone.sh $HYDRAULIC_ROOT/usr/bin/sudo-set-timezone.sh
+
 # Consolidate and copy teleport executable and launcher script
 COPY --chmod=555 --from=whist-teleport-drag-drop /whist-teleport-drag-drop/build/whist-teleport-drag-drop $HYDRAULIC_ROOT/opt/teleport/drag-drop
 COPY --chmod=555 teleport/drag-drop/run-whist-teleport-drag-drop.sh $HYDRAULIC_ROOT/usr/bin/run-whist-teleport-drag-drop.sh
@@ -823,6 +826,9 @@ FROM whist-base-${DisplayDriver} as whist-base
 #########################
 # Startup
 #########################
+
+# Add whist user for setting timezone to sudoers
+RUN echo 'whist   ALL=NOPASSWD: /usr/bin/set-timezone.sh' >> /etc/sudoers
 
 # Set up the entrypoint for the mandelbox (which starts systemd)
 CMD ["/usr/share/whist/entrypoint.sh"]
